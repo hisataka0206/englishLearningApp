@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>English Learning</title>
+<style>
+  :root { --bg:#f5f6fa; --card:#fff; --accent:#3b6ef5; --ok:#1a9c5d; --ng:#d64545; --muted:#8a90a0; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Hiragino Sans",sans-serif; background:var(--bg); color:#222; padding-bottom:40px; }
+  header { background:var(--accent); color:#fff; padding:14px 16px; font-size:18px; font-weight:700; display:flex; justify-content:space-between; align-items:center; }
+  #status { font-size:11px; font-weight:400; text-align:right; line-height:1.4; }
+  main { max-width:640px; margin:0 auto; padding:12px; }
+  .card { background:var(--card); border-radius:14px; padding:14px; margin-bottom:14px; box-shadow:0 1px 4px rgba(0,0,0,.07); }
+  textarea { width:100%; min-height:84px; font-size:16px; border:1px solid #d8dce6; border-radius:10px; padding:10px; resize:vertical; }
+  button { border:0; border-radius:10px; padding:10px 16px; font-size:15px; cursor:pointer; }
+  .primary { background:var(--accent); color:#fff; }
+  .ghost { background:#eef1f8; color:#333; }
+  .small { padding:6px 10px; font-size:13px; border-radius:8px; }
+  button:disabled { opacity:.45; }
+  .row { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; align-items:center; }
+  #english { font-size:19px; line-height:1.5; min-height:28px; }
+  .kw { display:flex; align-items:center; gap:8px; padding:7px 4px; border-bottom:1px solid #f0f1f5; font-size:15px; }
+  .kw:last-child { border-bottom:0; }
+  .kw .m { color:var(--muted); font-size:13px; }
+  .sent { padding:10px 4px; border-bottom:1px solid #f0f1f5; }
+  .sent:last-child { border-bottom:0; }
+  .sent .en { font-size:16px; }
+  .sent .ja { font-size:12px; color:var(--muted); margin-top:2px; }
+  .badge { background:#fdecec; color:var(--ng); border-radius:8px; font-size:12px; padding:2px 8px; }
+  .msg { font-size:13px; margin-top:8px; min-height:16px; }
+  .msg.ok { color:var(--ok); } .msg.ng { color:var(--ng); }
+  h2 { font-size:14px; color:var(--muted); margin:0 0 8px; font-weight:600; }
+  select { font-size:13px; padding:6px; border-radius:8px; border:1px solid #d8dce6; }
+  label.rate { font-size:13px; color:var(--muted); }
+</style>
+</head>
+<body>
+<header>English Learning<div id="status">…</div></header>
+<main>
+  <div class="card">
+    <h2>言いたいことを日本語で</h2>
+    <textarea id="ja" placeholder="例：明日の会議は30分遅れて始まります"></textarea>
+    <div class="row">
+      <button class="primary" id="btnTr" onclick="doTranslate()">英語にする</button>
+      <select id="model"></select>
+      <label class="rate">速さ <input type="range" id="rate" min="0.5" max="1.2" step="0.1" value="0.9" style="width:80px"></label>
+    </div>
+    <div class="msg" id="msgTr"></div>
+  </div>
+
+  <div class="card" id="resultCard" style="display:none">
+    <h2>英訳</h2>
+    <div id="english"></div>
+    <div class="row">
+      <button class="ghost" onclick="speak(document.getElementById('english').textContent)">🔊 発音</button>
+      <button class="primary" id="btnSave" onclick="saveSentence()">Notionに保存</button>
+    </div>
+    <div id="kwBox" style="margin-top:10px"></div>
+    <div class="row" id="kwActions" style="display:none">
+      <button class="ghost" id="btnWords" onclick="saveWords()">チェックした単語を登録</button>
+    </div>
+    <div class="msg" id="msgSave"></div>
+  </div>
+
+  <div class="card">
+    <h2>保存済みの英文（最新20件） <button class="small ghost" onclick="loadSentences()">更新</button></h2>
+    <div id="sentences">読み込み中…</div>
+  </div>
+</main>
+
+<script>
+let current = { japanese:"", english:"", keywords:[], pageId:null };
+let failLabels = ["Fail"];
+
+async function api(path, opts) {
+  const r = await fetch(path, opts ? { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(opts) } : undefined);
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error || "error");
+  return j.data;
+}
+
+function speak(text) {
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = "en-US";
+  u.rate = parseFloat(document.getElementById("rate").value);
+  const v = speechSynthesis.getVoices().filter(v => v.lang.startsWith("en"));
+  if (v.length) u.voice = v.find(x => x.name.includes("Samantha")) || v[0];
+  speechSynthesis.speak(u);
+}
+
+function msg(id, text, ok) {
+  const el = document.getElementById(id);
+  el.textContent = text; el.className = "msg " + (ok ? "ok" : "ng");
+}
+
+async function health() {
+  try {
+    const h = await api("/api/health");
+    failLabels = h.fail_labels || failLabels;
+    document.getElementById("status").innerHTML =
+      `Ollama: ${h.ollama_ok ? "✅" : "❌"}<br>Notion: ${h.notion_token_set ? "✅" : "❌ token未設定"}`;
+    const sel = document.getElementById("model");
+    sel.innerHTML = "";
+    (h.models.length ? h.models : [h.default_model]).forEach(m => {
+      const o = document.createElement("option");
+      o.value = o.textContent = m;
+      if (m === h.default_model) o.selected = true;
+      sel.appendChild(o);
+    });
+  } catch(e) { document.getElementById("status").textContent = "server error"; }
+}
+
+async function doTranslate() {
+  const ja = document.getElementById("ja").value.trim();
+  if (!ja) return;
+  const btn = document.getElementById("btnTr");
+  btn.disabled = true; msg("msgTr", "翻訳中…（ローカルLLM）", true);
+  try {
+    const d = await api("/api/translate", { japanese: ja, model: document.getElementById("model").value });
+    current = { japanese: ja, english: d.english, keywords: d.keywords, pageId: null };
+    document.getElementById("resultCard").style.display = "";
+    document.getElementById("english").textContent = d.english;
+    renderKeywords();
+    msg("msgTr", "", true); msg("msgSave", "", true);
+    document.getElementById("btnSave").disabled = false;
+    speak(d.english);
+  } catch(e) { msg("msgTr", e.message, false); }
+  btn.disabled = false;
+}
+
+function renderKeywords() {
+  const box = document.getElementById("kwBox");
+  box.innerHTML = "";
+  document.getElementById("kwActions").style.display = current.keywords.length ? "" : "none";
+  current.keywords.forEach((k, i) => {
+    const d = document.createElement("div");
+    d.className = "kw";
+    d.innerHTML = `<input type="checkbox" id="kw${i}" checked>
+      <label for="kw${i}"><b>${k.word}</b> <span class="m">${k.meaning}</span></label>
+      <button class="small ghost" onclick="speak('${k.word.replace(/'/g,"\\'")}')">🔊</button>`;
+    box.appendChild(d);
+  });
+}
+
+async function saveSentence() {
+  const btn = document.getElementById("btnSave");
+  btn.disabled = true; msg("msgSave", "保存中…", true);
+  try {
+    const d = await api("/api/sentences", { japanese: current.japanese, english: current.english });
+    current.pageId = d.id;
+    msg("msgSave", "Notionに保存しました", true);
+    loadSentences();
+  } catch(e) { msg("msgSave", e.message, false); btn.disabled = false; }
+}
+
+async function saveWords() {
+  const picked = current.keywords.filter((_, i) => document.getElementById("kw" + i).checked);
+  if (!picked.length) return;
+  if (!current.pageId) { await saveSentence(); }
+  msg("msgSave", "単語を登録中…", true);
+  try {
+    for (const k of picked) {
+      await api("/api/words", { word: k.word, meaning: k.meaning,
+        example: current.english, source_page_id: current.pageId });
+    }
+    msg("msgSave", `${picked.length}語を単語帳に登録しました`, true);
+  } catch(e) { msg("msgSave", e.message, false); }
+}
+
+async function loadSentences() {
+  const box = document.getElementById("sentences");
+  try {
+    const list = await api("/api/sentences");
+    box.innerHTML = list.length ? "" : "まだありません";
+    list.forEach(s => {
+      const d = document.createElement("div");
+      d.className = "sent";
+      const failBtns = failLabels.map(l =>
+        `<button class="small ghost" onclick="recFail(this,'${s.id}','${l}')">${l}</button>`).join("");
+      d.innerHTML = `<div class="en">${s.english}</div><div class="ja">${s.japanese}</div>
+        <div class="row"><button class="small ghost" onclick="speak(this.closest('.sent').querySelector('.en').textContent)">🔊</button>
+        ${failBtns}<span class="badge">fail: ${s.fail_count}</span></div>`;
+      box.appendChild(d);
+    });
+  } catch(e) { box.textContent = e.message; }
+}
+
+async function recFail(btn, id, label) {
+  btn.disabled = true;
+  try {
+    const d = await api("/api/fail", { page_id: id, label });
+    btn.closest(".sent").querySelector(".badge").textContent = "fail: " + d.fail_count;
+  } catch(e) { alert(e.message); }
+  btn.disabled = false;
+}
+
+speechSynthesis.getVoices();
+health(); loadSentences();
+</script>
+</body>
+</html>
