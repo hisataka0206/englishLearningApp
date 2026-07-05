@@ -256,7 +256,7 @@ function englishEdited(el) {
 
 (function initSplitMode() {
   const saved = localStorage.getItem("splitMode");
-  if (saved) document.getElementById("splitMode").value = saved;
+  document.getElementById("splitMode").value = saved || "fine";  // デフォルトは細かめ
 })();
 
 function playerRender() {
