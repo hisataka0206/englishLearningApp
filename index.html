@@ -44,7 +44,12 @@
     <div class="row">
       <button class="primary" id="btnTr" onclick="doTranslate()">英語にする</button>
       <select id="model"></select>
-      <label class="rate">速さ <input type="range" id="rate" min="0.5" max="1.2" step="0.1" value="0.9" style="width:80px"></label>
+    </div>
+    <div class="row" style="align-items:center">
+      <label class="rate">🔊 速さ <input type="range" id="rate" min="0.4" max="1.5" step="0.05" value="0.9" style="width:110px;vertical-align:middle" oninput="rateChanged(this.value)"> <b id="rateVal">0.9</b>x</label>
+      <button class="small ghost" onclick="setRate(0.6)">ゆっくり</button>
+      <button class="small ghost" onclick="setRate(0.9)">ふつう</button>
+      <button class="small ghost" onclick="setRate(1.2)">速い</button>
     </div>
     <div class="msg" id="msgTr"></div>
   </div>
@@ -79,6 +84,23 @@ async function api(path, opts) {
   if (!j.ok) throw new Error(j.error || "error");
   return j.data;
 }
+
+function rateChanged(v) {
+  document.getElementById("rateVal").textContent = parseFloat(v).toFixed(2).replace(/0$/, "");
+  localStorage.setItem("speechRate", v);  // 次回起動時も同じ速度
+}
+
+function setRate(v) {
+  document.getElementById("rate").value = v;
+  rateChanged(v);
+  speak("This is the speaking speed.");  // その場で試聴
+}
+
+(function initRate() {
+  const saved = localStorage.getItem("speechRate");
+  if (saved) { document.getElementById("rate").value = saved; }
+  rateChanged(document.getElementById("rate").value);
+})();
 
 function speak(text) {
   speechSynthesis.cancel();
