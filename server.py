@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.11.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.11.1"  # 機能変更時にここを更新（画面右上に表示される）
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -294,10 +294,11 @@ Japanese text:
 """
 
 KEYWORDS_PROMPT = """From the English sentence below, pick up to 3 keywords/phrases
-worth memorizing for a Japanese learner, each with a short Japanese meaning.
+worth memorizing for a Japanese learner.
+For each keyword, "meaning" MUST be the corresponding expression copied from the
+original Japanese text below. Use the exact wording that appears in the Japanese
+text. Do NOT invent a new translation of the English word.
 Respond ONLY with JSON: {"keywords": [{"word": "...", "meaning": "..."}]}
-
-English sentence:
 """
 
 
@@ -355,9 +356,12 @@ def translate(japanese, model=None):
     return {"english": english}, None
 
 
-def extract_keywords(english, model=None):
+def extract_keywords(english, japanese="", model=None):
     """Slow path: fetched by the UI in the background after translation."""
-    content, err = chat(KEYWORDS_PROMPT + english, model, json_mode=True,
+    prompt = (KEYWORDS_PROMPT
+              + f"\nEnglish sentence:\n{english}\n"
+              + f"\nOriginal Japanese text:\n{japanese}\n")
+    content, err = chat(prompt, model, json_mode=True,
                         num_predict=400)
     if err:
         return None, err
@@ -474,7 +478,8 @@ class Handler(BaseHTTPRequestHandler):
             english = (body.get("english") or "").strip()
             if not english:
                 return self._fail("english is required", 400)
-            data, err = extract_keywords(english, body.get("model"))
+            data, err = extract_keywords(english, body.get("japanese", ""),
+                                         body.get("model"))
         elif self.path == "/api/sentences":
             if not body.get("english"):
                 return self._fail("english is required", 400)

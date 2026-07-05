@@ -336,7 +336,7 @@ async function doTranslate() {
     msg("msgTr", "", true); msg("msgSave", "", true);
     document.getElementById("btnSave").disabled = false;
     playerLoad(d.english);  // 英文が出た時点ですぐ節分解して発音（キーワードは裏で取得）
-    api("/api/keywords", { english: d.english, model }).then(k => {
+    api("/api/keywords", { english: d.english, japanese: ja, model }).then(k => {
       if (current.english !== d.english) return;
       current.keywords = k.keywords || [];
       renderKeywords();
@@ -403,7 +403,7 @@ async function study(id) {
   window.scrollTo({ top: 0, behavior: "smooth" });
   playerLoad(current.marked);
   api("/api/practice", { id }).then(loadHistory).catch(() => {});  // 実施を自動記録
-  api("/api/keywords", { english: s.english, model: document.getElementById("model").value })
+  api("/api/keywords", { english: s.english, japanese: s.japanese, model: document.getElementById("model").value })
     .then(k => { current.keywords = k.keywords || []; renderKeywords(); })
     .catch(() => { document.getElementById("kwBox").innerHTML = ""; });
 }
