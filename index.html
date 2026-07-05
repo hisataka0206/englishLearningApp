@@ -257,6 +257,17 @@ function englishEdited(el) {
   current.marked = el.textContent.replace(/\s+/g, " ").trim();  // 区切り「/」込み
   current.english = current.marked.replace(/\s*[/|｜／]+\s*/g, " ").replace(/\s+/g, " ").trim();
   document.getElementById("btnSave").disabled = false;  // 編集したら保存可能に（呼び出し中は上書き）
+  playerSync();  // 区切りの変更を練習ウィンドウに即反映
+}
+
+function playerSync() {
+  // 編集中の英文（区切り込み）をプレイヤーの節チップに反映（再生はしない）
+  if (!current.marked) return;
+  player.playing = false;
+  player.gen++;
+  speechSynthesis.cancel();
+  playerSetText(current.marked);
+  playerRender();
 }
 
 (function initSplitMode() {
