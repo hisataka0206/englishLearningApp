@@ -54,7 +54,7 @@
     <div id="english"></div>
     <div class="row">
       <button class="ghost" onclick="speak(document.getElementById('english').textContent)">🔊 発音</button>
-      <button class="primary" id="btnSave" onclick="saveSentence()">Notionに保存</button>
+      <button class="primary" id="btnSave" onclick="saveSentence()">保存</button>
     </div>
     <div id="kwBox" style="margin-top:10px"></div>
     <div class="row" id="kwActions" style="display:none">
@@ -100,7 +100,7 @@ async function health() {
     const h = await api("/api/health");
     failLabels = h.fail_labels || failLabels;
     document.getElementById("status").innerHTML =
-      `Ollama: ${h.ollama_ok ? "✅" : "❌"}<br>Notion: ${h.notion_token_set ? "✅" : "❌ token未設定"}`;
+      `Ollama: ${h.ollama_ok ? "✅" : "❌"}<br>保存先: ${h.storage_is_drive ? "Google Drive ✅" : "ローカル（Drive未検出）"}`;
     const sel = document.getElementById("model");
     sel.innerHTML = "";
     (h.models.length ? h.models : [h.default_model]).forEach(m => {
@@ -150,7 +150,7 @@ async function saveSentence() {
   try {
     const d = await api("/api/sentences", { japanese: current.japanese, english: current.english });
     current.pageId = d.id;
-    msg("msgSave", "Notionに保存しました", true);
+    msg("msgSave", "Google Driveに保存しました", true);
     loadSentences();
   } catch(e) { msg("msgSave", e.message, false); btn.disabled = false; }
 }
@@ -163,7 +163,7 @@ async function saveWords() {
   try {
     for (const k of picked) {
       await api("/api/words", { word: k.word, meaning: k.meaning,
-        example: current.english, source_page_id: current.pageId });
+        example: current.english, source_id: current.pageId });
     }
     msg("msgSave", `${picked.length}語を単語帳に登録しました`, true);
   } catch(e) { msg("msgSave", e.message, false); }
@@ -190,7 +190,7 @@ async function loadSentences() {
 async function recFail(btn, id, label) {
   btn.disabled = true;
   try {
-    const d = await api("/api/fail", { page_id: id, label });
+    const d = await api("/api/fail", { id, label });
     btn.closest(".sent").querySelector(".badge").textContent = "fail: " + d.fail_count;
   } catch(e) { alert(e.message); }
   btn.disabled = false;

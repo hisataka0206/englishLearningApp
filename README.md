@@ -1,37 +1,50 @@
 # English Learning App
 
-[[英語学習]]用のスマホ対応ブラウザアプリ。日本語を入力すると[[ローカルLLM]]（[[Ollama]]）が英訳し、ブラウザ内蔵の音声合成で[[発音]]します。英文と[[重要キーワード]]は[[Notion]]に保存でき、[[中国語学習記事]]と同じ方式で[[失敗履歴]]（ページへのコメント）を残せます。
+[[英語学習]]用のスマホ対応ブラウザアプリ。日本語を入力すると[[ローカルLLM]]（[[Ollama]]）が英訳し、ブラウザ内蔵の音声合成で[[発音]]します。英文と[[重要キーワード]]は[[Google Drive]]に自動保存され、[[失敗履歴]]（ラベル＋日時）も英文ごとに記録できます。
 
 ## 構成
 
-- `server.py` — Mac上で動くミニサーバー（Python標準ライブラリのみ）。UI配信・Ollama翻訳・Notion API中継。
+- `server.py` — Mac上で常駐するミニサーバー（Python標準ライブラリのみ）。UI配信・Ollama翻訳・Drive保存。
 - `index.html` — スマホ対応UI（発音は Web Speech API）。
-- `config.json` — [[外部設定ファイル]]。NotionのID・トークン、Ollamaのモデル等はここで変更。
+- `config.json` — [[外部設定ファイル]]。保存先・Ollamaモデル・失敗ラベル等はここで変更。
+- `setup.sh` — 常時起動セットアップ（launchdのLaunchAgent登録）。
 
-## Notion保存先（作成済み）
+## データ保存（Google Drive）
 
-- 親ページ: 英語学習用 `393cd557226180d592cef58441a21af6`
-- English Sentences DB: `4209bc8eb6cd491c873c309b85edefda`（English / Japanese / Memo / FailCount）
-- English Words DB: `e42c489747ad48b69541ed8e6185d479`（Word / Meaning / Example / Source→Sentencesへのリレーション）
+Mac版[[Google Drive]]アプリの同期フォルダを自動検出し、`My Drive/EnglishLearningApp/` に保存します（API・認証は不要）。Driveアプリ未検出時はアプリ内 `data/` に保存されます。保存先を固定したい場合は `config.json` の `storage.data_dir` にパスを指定してください。
 
-失敗履歴は[[運用ルール]]に倣い、英文ページへのコメント（Fail / F / T / R / V。`config.json` の `fail_labels` で変更可）で記録し、FailCountも自動加算します。
+- `sentences.json` — 英文データ本体（日本語・英文・メモ・失敗履歴）
+- `words.json` — 単語帳（出典英文のidと紐付け）
+- `sentences.md` / `words.md` — スマホのDriveアプリでも読みやすい自動生成ビュー
 
-## セットアップ
+失敗履歴は英文ごとに「ラベル（Fail / F / T / R / V。`config.json` の `fail_labels` で変更可）＋日時」で蓄積され、`sentences.md` にも一覧表示されます。
 
-1. Notionの [My integrations](https://www.notion.so/my-integrations) で[[インテグレーション]]を作成し、トークンを `config.json` の `notion.token` に設定。
-2. Notionの「英語学習用」ページの「…」→ 接続先 から、作成したインテグレーションを追加（配下のDBにも権限が及びます）。
-3. Ollamaが起動していることを確認し（`ollama serve`）、使うモデルを `config.json` の `ollama.model` に設定（UIのプルダウンでも切替可）。
-4. サーバー起動: `python3 server.py`
-5. Macでは `http://localhost:8765`、スマホ（同一Wi-Fi）では `http://<MacのIPアドレス>:8765` を開く。MacのIPは `ipconfig getifaddr en0` で確認。
+## 初回セットアップ（1回だけ。以後ユーザーは何も意識しない運用）
 
-## 外出先から使う場合
+### Mac側
 
-[[Tailscale]] をMacとスマホに導入すると、同一Wi-Fi外からも `http://<Macのマシン名>:8765` でアクセスできます（GitHub Actions/Pagesから自宅PCへの直接アクセスは不可のため、トンネルが必要）。
+1. [[Ollama]] 起動確認とモデル設定（`config.json` の `ollama.model`。UIでも切替可）。
+2. サーバー常時起動: `bash setup.sh`（ログイン時自動起動＋異常終了時の自動再起動）。
+3. [[Tailscale]] をインストールしてログインし、メニューバー設定で「Start on login」をON。
+4. スリープ防止: システム設定 → ディスプレイ →「ディスプレイがオフのときに自動でスリープさせない」をON（または `sudo pmset -a sleep 0`）。
+
+### iPhone側
+
+1. Tailscaleアプリを入れて同じアカウントでログイン。
+2. アプリの設定で「[[VPN On Demand]]」をON → 以後は自動接続され、開閉操作は不要。
+3. Safariで `http://<Macのマシン名>:8765` を開き、共有メニューから「ホーム画面に追加」。
+
+以後は**ホーム画面のアイコンをタップするだけ**。Tailscaleの存在を意識する必要はありません。自宅Wi-Fi内なら `http://<MacのIP>:8765` でも接続できます。
+
+## 制約
+
+- ローカルLLMは自宅Macで動くため、**Macが起動していないと翻訳できません**（GitHub ActionsなどからローカルPCへの直接アクセスは不可）。
+- 保存データはMac側で書き込み、Driveアプリが自動でクラウド同期します。
 
 ## APIエンドポイント
 
-- `GET /api/health` — Ollama/Notion設定の状態、モデル一覧
+- `GET /api/health` — Ollama状態・モデル一覧・保存先
 - `POST /api/translate` — `{japanese, model?}` → `{english, keywords[]}`
 - `GET/POST /api/sentences` — 英文の一覧取得 / 保存
-- `POST /api/words` — 単語登録（`source_page_id` で英文と紐付け）
-- `POST /api/fail` — `{page_id, label}` 失敗コメント追加＋FailCount加算
+- `POST /api/words` — 単語登録（`source_id` で英文と紐付け）
+- `POST /api/fail` — `{id, label}` 失敗履歴を追記

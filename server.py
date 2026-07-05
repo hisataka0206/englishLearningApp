@@ -3,23 +3,32 @@
 
 - Serves the browser UI (index.html)
 - /api/translate : Japanese -> English + keywords via local Ollama
-- /api/sentences : save / list sentences in Notion DB
-- /api/words     : register keywords in Notion words DB (relation to sentence)
-- /api/fail      : record a fail as a Notion comment (+ FailCount increment)
+- /api/sentences : save / list sentences (JSON files in Google Drive sync folder)
+- /api/words     : register keywords (relation to source sentence by id)
+- /api/fail      : record a fail (label + timestamp) on a sentence
 
-Config (Notion IDs, Ollama, port) lives in config.json next to this file.
+Storage: JSON files (source of truth) + auto-generated Markdown views,
+written into the Google Drive desktop-app sync folder so everything is
+backed up to Drive automatically. No Google API / auth required.
+
+Config lives in config.json next to this file.
 Standard library only - no pip install required.
 """
 
+import glob
 import json
 import os
 import re
+import threading
 import urllib.request
 import urllib.error
+import uuid
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
+LOCK = threading.Lock()
 
 
 def load_config():
@@ -30,13 +39,122 @@ def load_config():
 CFG = load_config()
 
 
-# ---------------------------------------------------------------- helpers
-def http_json(url, payload=None, headers=None, method=None, timeout=120):
+# ---------------------------------------------------------------- storage
+def resolve_data_dir():
+    """Return the data folder. "AUTO" finds the Google Drive sync folder."""
+    conf = CFG.get("storage", {}).get("data_dir", "AUTO")
+    if conf and conf != "AUTO":
+        path = os.path.expanduser(conf)
+    else:
+        candidates = glob.glob(os.path.expanduser(
+            "~/Library/CloudStorage/GoogleDrive-*/My Drive"))
+        if candidates:
+            path = os.path.join(candidates[0], "EnglishLearningApp")
+        else:
+            path = os.path.join(BASE_DIR, "data")  # fallback: local folder
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _file(name):
+    return os.path.join(resolve_data_dir(), name)
+
+
+def _load(name):
+    try:
+        with open(_file(name), encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def _save(name, items):
+    tmp = _file(name) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(items, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, _file(name))
+
+
+def now():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def regen_markdown():
+    """Human-readable views for browsing in the Drive app."""
+    sentences = _load("sentences.json")
+    words = _load("words.json")
+
+    lines = ["# English Sentences", ""]
+    for s in reversed(sentences):
+        lines.append(f"## {s['english']}")
+        lines.append(f"- 日本語: {s['japanese']}")
+        lines.append(f"- 登録日: {s['created']}  /  fail: {len(s.get('fails', []))}")
+        for fl in s.get("fails", []):
+            lines.append(f"  - ❌ {fl['label']} ({fl['time']})")
+        if s.get("memo"):
+            lines.append(f"- メモ: {s['memo']}")
+        lines.append("")
+    with open(_file("sentences.md"), "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+    by_id = {s["id"]: s for s in sentences}
+    lines = ["# English Words", "", "| Word | 意味 | 例文 | 登録日 |",
+             "|---|---|---|---|"]
+    for w in reversed(words):
+        src = by_id.get(w.get("source_id"), {})
+        example = w.get("example") or src.get("english", "")
+        lines.append(f"| **{w['word']}** | {w.get('meaning','')} | {example} | {w['created']} |")
+    with open(_file("words.md"), "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+
+def save_sentence(japanese, english, memo=""):
+    with LOCK:
+        items = _load("sentences.json")
+        rec = {"id": uuid.uuid4().hex, "japanese": japanese, "english": english,
+               "memo": memo, "created": now(), "fails": []}
+        items.append(rec)
+        _save("sentences.json", items)
+        regen_markdown()
+    return {"id": rec["id"]}, None
+
+
+def list_sentences(limit=20):
+    items = _load("sentences.json")
+    out = [{"id": s["id"], "english": s["english"], "japanese": s["japanese"],
+            "fail_count": len(s.get("fails", []))}
+           for s in reversed(items[-200:])]
+    return out[:limit], None
+
+
+def save_word(word, meaning, example="", source_id=None):
+    with LOCK:
+        items = _load("words.json")
+        rec = {"id": uuid.uuid4().hex, "word": word, "meaning": meaning,
+               "example": example, "source_id": source_id, "created": now()}
+        items.append(rec)
+        _save("words.json", items)
+        regen_markdown()
+    return {"id": rec["id"]}, None
+
+
+def record_fail(sentence_id, label="Fail"):
+    with LOCK:
+        items = _load("sentences.json")
+        for s in items:
+            if s["id"] == sentence_id:
+                s.setdefault("fails", []).append({"label": label, "time": now()})
+                _save("sentences.json", items)
+                regen_markdown()
+                return {"fail_count": len(s["fails"])}, None
+    return None, "sentence not found"
+
+
+# ---------------------------------------------------------------- ollama
+def http_json(url, payload=None, timeout=120):
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
-    req = urllib.request.Request(url, data=data, method=method or ("POST" if data else "GET"))
+    req = urllib.request.Request(url, data=data)
     req.add_header("Content-Type", "application/json")
-    for k, v in (headers or {}).items():
-        req.add_header(k, v)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as res:
             return json.loads(res.read().decode("utf-8")), None
@@ -50,29 +168,6 @@ def http_json(url, payload=None, headers=None, method=None, timeout=120):
         return None, str(e)
 
 
-def notion_headers():
-    n = CFG["notion"]
-    return {
-        "Authorization": f"Bearer {n['token']}",
-        "Notion-Version": n.get("api_version", "2022-06-28"),
-    }
-
-
-def notion(path, payload=None, method=None):
-    return http_json(f"https://api.notion.com/v1/{path}", payload,
-                     notion_headers(), method, timeout=30)
-
-
-def rich(text):
-    return [{"type": "text", "text": {"content": (text or "")[:2000]}}]
-
-
-def plain(prop):
-    """Extract plain text from a Notion title/rich_text property."""
-    return "".join(t.get("plain_text", "") for t in prop or [])
-
-
-# ---------------------------------------------------------------- ollama
 TRANSLATE_PROMPT = """You are an English teacher for a Japanese learner.
 Translate the Japanese text into natural, conversational English.
 Then pick up to 5 important keywords/phrases from your English translation
@@ -121,81 +216,6 @@ def list_models():
     return [m["name"] for m in res.get("models", [])], None
 
 
-# ---------------------------------------------------------------- notion ops
-def save_sentence(japanese, english, memo=""):
-    payload = {
-        "parent": {"database_id": CFG["notion"]["sentences_db_id"]},
-        "properties": {
-            "English": {"title": rich(english)},
-            "Japanese": {"rich_text": rich(japanese)},
-            "Memo": {"rich_text": rich(memo)},
-            "FailCount": {"number": 0},
-        },
-    }
-    res, err = notion("pages", payload)
-    if err:
-        return None, err
-    return {"id": res["id"], "url": res.get("url", "")}, None
-
-
-def list_sentences(limit=20):
-    payload = {
-        "page_size": limit,
-        "sorts": [{"timestamp": "created_time", "direction": "descending"}],
-    }
-    res, err = notion(f"databases/{CFG['notion']['sentences_db_id']}/query", payload)
-    if err:
-        return None, err
-    items = []
-    for p in res.get("results", []):
-        props = p.get("properties", {})
-        items.append({
-            "id": p["id"],
-            "url": p.get("url", ""),
-            "english": plain(props.get("English", {}).get("title")),
-            "japanese": plain(props.get("Japanese", {}).get("rich_text")),
-            "fail_count": props.get("FailCount", {}).get("number") or 0,
-        })
-    return items, None
-
-
-def save_word(word, meaning, example="", source_page_id=None):
-    props = {
-        "Word": {"title": rich(word)},
-        "Meaning": {"rich_text": rich(meaning)},
-        "Example": {"rich_text": rich(example)},
-    }
-    if source_page_id:
-        props["Source"] = {"relation": [{"id": source_page_id}]}
-    payload = {"parent": {"database_id": CFG["notion"]["words_db_id"]},
-               "properties": props}
-    res, err = notion("pages", payload)
-    if err:
-        return None, err
-    return {"id": res["id"], "url": res.get("url", "")}, None
-
-
-def record_fail(page_id, label="Fail"):
-    # 1) comment on the sentence page (same convention as Chinese articles)
-    _, err = notion("comments", {
-        "parent": {"page_id": page_id},
-        "rich_text": rich(label),
-    })
-    if err:
-        return None, err
-    # 2) increment FailCount
-    page, err = notion(f"pages/{page_id}", method="GET")
-    if err:
-        return None, err
-    current = page.get("properties", {}).get("FailCount", {}).get("number") or 0
-    _, err = notion(f"pages/{page_id}",
-                    {"properties": {"FailCount": {"number": current + 1}}},
-                    method="PATCH")
-    if err:
-        return None, err
-    return {"fail_count": current + 1}, None
-
-
 # ---------------------------------------------------------------- server
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, obj=None, body=None, ctype="application/json"):
@@ -234,10 +254,11 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/health":
             CFG = load_config()  # allow editing config.json without restart
             models, ollama_err = list_models()
-            token_set = "PUT_YOUR" not in CFG["notion"]["token"]
+            data_dir = resolve_data_dir()
+            drive = "CloudStorage/GoogleDrive" in data_dir
             self._ok({"ollama_ok": ollama_err is None, "ollama_error": ollama_err,
                       "models": models, "default_model": CFG["ollama"]["model"],
-                      "notion_token_set": token_set,
+                      "storage_path": data_dir, "storage_is_drive": drive,
                       "fail_labels": CFG.get("fail_labels", ["Fail"])})
         elif self.path.startswith("/api/sentences"):
             data, err = list_sentences()
@@ -265,11 +286,11 @@ class Handler(BaseHTTPRequestHandler):
             if not body.get("word"):
                 return self._fail("word is required", 400)
             data, err = save_word(body["word"], body.get("meaning", ""),
-                                  body.get("example", ""), body.get("source_page_id"))
+                                  body.get("example", ""), body.get("source_id"))
         elif self.path == "/api/fail":
-            if not body.get("page_id"):
-                return self._fail("page_id is required", 400)
-            data, err = record_fail(body["page_id"], body.get("label", "Fail"))
+            if not body.get("id"):
+                return self._fail("id is required", 400)
+            data, err = record_fail(body["id"], body.get("label", "Fail"))
         else:
             return self._send(404, {"ok": False, "error": "not found"})
 
@@ -283,7 +304,7 @@ def main():
     host = CFG["server"].get("host", "0.0.0.0")
     port = CFG["server"].get("port", 8765)
     print(f"English Learning App server: http://localhost:{port}")
-    print("From your phone (same Wi-Fi): http://<Mac-IP>:%d" % port)
+    print(f"Data folder: {resolve_data_dir()}")
     ThreadingHTTPServer((host, port), Handler).serve_forever()
 
 
