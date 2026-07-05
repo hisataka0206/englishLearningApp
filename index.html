@@ -256,7 +256,7 @@ function englishEdited(el) {
   // 英訳の手編集を反映：以後の発音・保存・単語登録はこの内容を使う
   current.marked = el.textContent.replace(/\s+/g, " ").trim();  // 区切り「/」込み
   current.english = current.marked.replace(/\s*[/|｜／]+\s*/g, " ").replace(/\s+/g, " ").trim();
-  document.getElementById("btnSave").disabled = false;  // 再学習中も編集したら新規保存できる
+  document.getElementById("btnSave").disabled = false;  // 編集したら保存可能に（呼び出し中は上書き）
 }
 
 (function initSplitMode() {
@@ -383,9 +383,11 @@ async function saveSentence() {
   const btn = document.getElementById("btnSave");
   btn.disabled = true; msg("msgSave", "保存中…", true);
   try {
-    const d = await api("/api/sentences", { japanese: current.japanese, english: current.english, marked: current.marked });
+    const payload = { japanese: current.japanese, english: current.english, marked: current.marked };
+    if (current.pageId) payload.id = current.pageId;  // 呼び出した英文は同じIDに上書き
+    const d = await api("/api/sentences", payload);
     current.pageId = d.id;
-    msg("msgSave", "Google Driveに保存しました", true);
+    msg("msgSave", d.updated ? "上書き保存しました（区切り位置を更新）" : "Google Driveに保存しました", true);
     loadHistory();
   } catch(e) { msg("msgSave", e.message, false); btn.disabled = false; }
 }
@@ -417,7 +419,7 @@ async function study(id) {
   document.getElementById("resultCard").style.display = "";
   document.getElementById("english").textContent = current.marked;
   document.getElementById("btnSave").disabled = true;
-  msg("msgSave", "保存済みの英文を再学習中（編集や単語登録も可能）", true);
+  msg("msgSave", "保存済みの英文を再学習中（区切りを編集して保存すると上書きされます）", true);
   document.getElementById("kwBox").innerHTML =
     "<span style='color:var(--muted);font-size:13px'>キーワード抽出中…</span>";
   document.getElementById("kwActions").style.display = "none";

@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.12.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.13.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -170,6 +170,42 @@ def regen_markdown():
     with open(_file("words.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
     drive_push_async()  # 変更のたびにDriveフォルダへAPIで反映
+
+
+def migrate_ids():
+    """既存データにIDが無いレコードがあれば固有IDを付与する。"""
+    with LOCK:
+        changed = False
+        for name in ("sentences.json", "words.json"):
+            items = _load(name)
+            fixed = False
+            for it in items:
+                if not it.get("id"):
+                    it["id"] = uuid.uuid4().hex
+                    fixed = True
+            if fixed:
+                _save(name, items)
+                changed = True
+                print(f"[migrate] assigned ids in {name}")
+        if changed:
+            regen_markdown()
+
+
+def update_sentence(sentence_id, japanese, english, memo="", marked=""):
+    """既存の英文を上書き（実施履歴・fail履歴・登録日は保持）。"""
+    with LOCK:
+        items = _load("sentences.json")
+        for s in items:
+            if s["id"] == sentence_id:
+                s["japanese"] = japanese or s.get("japanese", "")
+                s["english"] = english
+                s["marked"] = marked or english
+                if memo:
+                    s["memo"] = memo
+                _save("sentences.json", items)
+                regen_markdown()
+                return {"id": sentence_id, "updated": True}, None
+    return None, "sentence not found"
 
 
 def save_sentence(japanese, english, memo="", marked=""):
@@ -496,8 +532,13 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/sentences":
             if not body.get("english"):
                 return self._fail("english is required", 400)
-            data, err = save_sentence(body.get("japanese", ""), body["english"],
-                                      body.get("memo", ""), body.get("marked", ""))
+            if body.get("id"):  # ID指定なら上書き
+                data, err = update_sentence(body["id"], body.get("japanese", ""),
+                                            body["english"], body.get("memo", ""),
+                                            body.get("marked", ""))
+            else:
+                data, err = save_sentence(body.get("japanese", ""), body["english"],
+                                          body.get("memo", ""), body.get("marked", ""))
         elif self.path == "/api/words/delete":
             if not body.get("id"):
                 return self._fail("id is required", 400)
@@ -536,6 +577,7 @@ def main():
     if DRIVE:
         print(f"Drive: {'ready' if DRIVE.configured() else 'NOT configured - see README (GAS deploy)'}")
         drive_pull_initial()
+    migrate_ids()  # 既存データへの固有ID付与（無いものだけ）
     warm_up()  # preload the model at startup
     ThreadingHTTPServer((host, port), Handler).serve_forever()
 
