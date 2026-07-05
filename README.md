@@ -13,13 +13,17 @@
 
 [[Google Drive API]]で指定フォルダ（`config.json` の `storage.drive.folder_id`）に保存します。ローカルの `data/` を作業コピーとして、変更のたびにバックグラウンドでDriveへアップロード（作成/更新）します。起動時にローカルが空ならDriveから取得するので、他のMacへの引っ越しも可能です。
 
-### Drive API の初回設定（1回だけ）
+### 初回設定：GAS方式（推奨・[[探検ラリー]]と同方式）
 
-1. [Google Cloud Console](https://console.cloud.google.com) でプロジェクト作成 → 「APIとサービス > ライブラリ」で **Google Drive API を有効化**。
-2. 「OAuth同意画面」→ External → 自分をテストユーザーに追加。
-3. 「認証情報 > 認証情報を作成 > OAuthクライアントID」→ 種類は**デスクトップアプリ**。
-4. 表示された クライアントID／シークレット を `config.json` の `storage.drive.client_id` / `client_secret` に記入（`config.example.json` をコピーして作成）。
-5. `python3 drive_auth.py` を実行 → ブラウザで承認 → `drive_token.json` が保存され完了。
+[[Google Apps Script]]のWebアプリ経由でDriveに書き込むため、OAuth設定は不要です。
+
+1. [script.google.com](https://script.google.com) で新規プロジェクト作成 → `gas/Code.gs` を貼り付け（フォルダIDは設定済み。`SHARED_SECRET`は自由に変更可）。
+2. 「デプロイ」→「新しいデプロイ」→ 種類: ウェブアプリ、実行ユーザー: 自分、アクセス: 全員。
+3. デプロイURLとシークレットを `config.json` の `storage.drive_gas.gas_url` / `gas_secret` に記入（`config.example.json` をコピーして作成、`backend` は `"drive_gas"`）。
+
+### 別方式：Drive REST API（OAuth）
+
+`backend` を `"drive_api"` にし、Google CloudでOAuthクライアント（デスクトップアプリ）を作成して `storage.drive` に記入 → `python3 drive_auth.py` で承認。GAS方式で足りる場合は不要です。
 
 `config.json` と `drive_token.json` は秘密情報のためgit管理外です。旧方式（Drive同期フォルダ）に戻すには `storage.backend` を `"sync"` にします。
 

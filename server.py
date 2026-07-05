@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.8.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.8.1"  # 機能変更時にここを更新（画面右上に表示される）
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -41,16 +41,19 @@ def load_config():
 CFG = load_config()
 
 try:
-    from google_drive import DriveClient
+    from google_drive import DriveClient, GasDriveClient
 except ImportError:
-    DriveClient = None
+    DriveClient = GasDriveClient = None
 
 
 def make_drive():
     s = CFG.get("storage", {})
-    if s.get("backend") != "drive_api" or DriveClient is None:
-        return None
-    return DriveClient(s.get("drive", {}), BASE_DIR)
+    backend = s.get("backend")
+    if backend == "drive_gas" and GasDriveClient:
+        return GasDriveClient(s.get("drive_gas", {}), BASE_DIR)
+    if backend == "drive_api" and DriveClient:
+        return DriveClient(s.get("drive", {}), BASE_DIR)
+    return None
 
 
 DRIVE = make_drive()
@@ -63,7 +66,7 @@ def resolve_data_dir():
     conf = CFG.get("storage", {}).get("data_dir", "AUTO")
     if conf and conf != "AUTO":
         path = os.path.expanduser(conf)
-    elif CFG.get("storage", {}).get("backend") == "drive_api":
+    elif CFG.get("storage", {}).get("backend") in ("drive_api", "drive_gas"):
         path = os.path.join(BASE_DIR, "data")  # local cache; pushed via API
     else:
         candidates = glob.glob(os.path.expanduser(
@@ -405,7 +408,7 @@ class Handler(BaseHTTPRequestHandler):
             if not ollama_err:
                 warm_up()  # preload model while the user is typing
             data_dir = resolve_data_dir()
-            if CFG.get("storage", {}).get("backend") == "drive_api":
+            if CFG.get("storage", {}).get("backend") in ("drive_api", "drive_gas"):
                 mode = "drive_api"
             elif "CloudStorage/GoogleDrive" in data_dir:
                 mode = "sync"
@@ -476,7 +479,7 @@ def main():
     print(f"English Learning App v{APP_VERSION}: http://localhost:{port}")
     print(f"Data folder: {resolve_data_dir()}")
     if DRIVE:
-        print(f"Drive API: {'ready' if DRIVE.configured() else 'NOT authorized - run python3 drive_auth.py'}")
+        print(f"Drive: {'ready' if DRIVE.configured() else 'NOT configured - see README (GAS deploy)'}")
         drive_pull_initial()
     warm_up()  # preload the model at startup
     ThreadingHTTPServer((host, port), Handler).serve_forever()

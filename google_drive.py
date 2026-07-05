@@ -103,3 +103,40 @@ class DriveClient:
         req.add_header("Authorization", f"Bearer {self._token()}")
         with urllib.request.urlopen(req, timeout=60) as r:
             return r.read()
+
+
+class GasDriveClient:
+    """Drive access via a Google Apps Script web app (tanken-rally方式).
+
+    No OAuth / Cloud Console needed: deploy gas/Code.gs as a web app and put
+    its URL + shared secret in config.json. Same interface as DriveClient.
+    """
+
+    def __init__(self, cfg, base_dir=None):
+        self.url = cfg.get("gas_url", "")
+        self.secret = cfg.get("gas_secret", "")
+
+    def configured(self):
+        return bool(self.url.startswith("http") and self.secret)
+
+    def _post(self, payload):
+        payload["secret"] = self.secret
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        # GAS: Content-Type text/plain でCORS/preflight回避、302リダイレクトに追従
+        req = urllib.request.Request(self.url, data=data,
+                                     headers={"Content-Type": "text/plain"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            res = json.loads(r.read().decode("utf-8"))
+        if not res.get("ok"):
+            raise RuntimeError(f"GAS error: {res.get('error', 'unknown')}")
+        return res
+
+    def upsert(self, name, content, mime="application/json"):
+        text = content.decode("utf-8") if isinstance(content, bytes) else content
+        return self._post({"action": "putFile", "name": name,
+                           "content": text, "mime": mime}).get("id")
+
+    def download(self, name):
+        res = self._post({"action": "getFile", "name": name})
+        c = res.get("content")
+        return c.encode("utf-8") if c is not None else None

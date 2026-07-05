@@ -1,10 +1,14 @@
 {
   "storage": {
-    "backend": "drive_api",
+    "backend": "drive_gas",
     "data_dir": "AUTO",
+    "drive_gas": {
+      "gas_url": "PUT_YOUR_GAS_DEPLOY_URL (https://script.google.com/macros/s/.../exec)",
+      "gas_secret": "english-learning-app-2026"
+    },
     "drive": {
       "folder_id": "1Ti5_KbmpML5NAfUxUW6OM3OZcSG6dQjb",
-      "client_id": "PUT_YOUR_GOOGLE_OAUTH_CLIENT_ID",
+      "client_id": "PUT_YOUR_GOOGLE_OAUTH_CLIENT_ID (backend=drive_api の場合のみ)",
       "client_secret": "PUT_YOUR_GOOGLE_OAUTH_CLIENT_SECRET",
       "token_file": "drive_token.json"
     }
