@@ -113,7 +113,13 @@ class GasDriveClient:
     """
 
     def __init__(self, cfg, base_dir=None):
-        self.url = cfg.get("gas_url", "")
+        url = cfg.get("gas_url", "").strip()
+        if url and not url.startswith("http"):
+            # deployment ID だけが貼られた場合はURLを組み立てる
+            url = f"https://script.google.com/macros/s/{url}/exec"
+        if url.startswith("http") and not url.rstrip("/").endswith("/exec"):
+            url = url.rstrip("/") + "/exec"
+        self.url = url
         self.secret = cfg.get("gas_secret", "")
 
     def configured(self):
