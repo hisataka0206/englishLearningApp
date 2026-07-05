@@ -88,9 +88,13 @@ def regen_markdown():
     for s in reversed(sentences):
         lines.append(f"## {s['english']}")
         lines.append(f"- 日本語: {s['japanese']}")
-        lines.append(f"- 登録日: {s['created']}  /  fail: {len(s.get('fails', []))}")
+        practices = s.get("practices", [])
+        last = practices[-1] if practices else "未実施"
+        lines.append(f"- 登録日: {s['created']}  /  実施: {len(practices)}回（最終: {last}）  /  fail: {len(s.get('fails', []))}")
         for fl in s.get("fails", []):
             lines.append(f"  - ❌ {fl['label']} ({fl['time']})")
+        if practices:
+            lines.append(f"  - 🗣 実施日: {', '.join(p[:10] for p in practices)}")
         if s.get("memo"):
             lines.append(f"- メモ: {s['memo']}")
         lines.append("")
@@ -121,10 +125,40 @@ def save_sentence(japanese, english, memo=""):
 
 def list_sentences(limit=20):
     items = _load("sentences.json")
-    out = [{"id": s["id"], "english": s["english"], "japanese": s["japanese"],
-            "fail_count": len(s.get("fails", []))}
-           for s in reversed(items[-200:])]
+    out = []
+    for s in reversed(items[-200:]):
+        practices = s.get("practices", [])
+        out.append({"id": s["id"], "english": s["english"], "japanese": s["japanese"],
+                    "created": s.get("created", "")[:10],
+                    "fail_count": len(s.get("fails", [])),
+                    "practice_count": len(practices),
+                    "last_practiced": practices[-1][:10] if practices else ""})
     return out[:limit], None
+
+
+def record_practice(sentence_id):
+    """Auto-log the date/time a sentence was practiced (spoken)."""
+    with LOCK:
+        items = _load("sentences.json")
+        for s in items:
+            if s["id"] == sentence_id:
+                s.setdefault("practices", []).append(now())
+                _save("sentences.json", items)
+                regen_markdown()
+                return {"practice_count": len(s["practices"]),
+                        "last_practiced": s["practices"][-1][:10]}, None
+    return None, "sentence not found"
+
+
+def delete_sentence(sentence_id):
+    with LOCK:
+        items = _load("sentences.json")
+        remaining = [s for s in items if s["id"] != sentence_id]
+        if len(remaining) == len(items):
+            return None, "sentence not found"
+        _save("sentences.json", remaining)
+        regen_markdown()
+    return {"deleted": sentence_id}, None
 
 
 def save_word(word, meaning, example="", source_id=None):
@@ -328,6 +362,14 @@ class Handler(BaseHTTPRequestHandler):
             if not body.get("id"):
                 return self._fail("id is required", 400)
             data, err = record_fail(body["id"], body.get("label", "Fail"))
+        elif self.path == "/api/practice":
+            if not body.get("id"):
+                return self._fail("id is required", 400)
+            data, err = record_practice(body["id"])
+        elif self.path == "/api/delete":
+            if not body.get("id"):
+                return self._fail("id is required", 400)
+            data, err = delete_sentence(body["id"])
         else:
             return self._send(404, {"ok": False, "error": "not found"})
 

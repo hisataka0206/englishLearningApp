@@ -54,3 +54,5 @@ Mac版[[Google Drive]]アプリの同期フォルダを自動検出し、`My Dri
 - `GET/POST /api/sentences` — 英文の一覧取得 / 保存
 - `POST /api/words` — 単語登録（`source_id` で英文と紐付け）
 - `POST /api/fail` — `{id, label}` 失敗履歴を追記
+- `POST /api/practice` — `{id}` [[実施日]]を自動記録（一覧の🔊タップで発動）
+- `POST /api/delete` — `{id}` 英文を削除
