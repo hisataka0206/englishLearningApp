@@ -26,6 +26,8 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+APP_VERSION = "1.3.0"  # 機能変更時にここを更新（画面右上に表示される）
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 LOCK = threading.Lock()
@@ -322,7 +324,8 @@ class Handler(BaseHTTPRequestHandler):
                 warm_up()  # preload model while the user is typing
             data_dir = resolve_data_dir()
             drive = "CloudStorage/GoogleDrive" in data_dir
-            self._ok({"ollama_ok": ollama_err is None, "ollama_error": ollama_err,
+            self._ok({"version": APP_VERSION,
+                      "ollama_ok": ollama_err is None, "ollama_error": ollama_err,
                       "models": models, "default_model": CFG["ollama"]["model"],
                       "storage_path": data_dir, "storage_is_drive": drive,
                       "fail_labels": CFG.get("fail_labels", ["Fail"])})
@@ -382,7 +385,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     host = CFG["server"].get("host", "0.0.0.0")
     port = CFG["server"].get("port", 8765)
-    print(f"English Learning App server: http://localhost:{port}")
+    print(f"English Learning App v{APP_VERSION}: http://localhost:{port}")
     print(f"Data folder: {resolve_data_dir()}")
     warm_up()  # preload the model at startup
     ThreadingHTTPServer((host, port), Handler).serve_forever()

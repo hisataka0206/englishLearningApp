@@ -36,7 +36,7 @@
 </style>
 </head>
 <body>
-<header>English Learning<div id="status">…</div></header>
+<header>English Learning <span id="ver" style="font-size:11px;font-weight:400;opacity:.8"></span><div id="status">…</div></header>
 <main>
   <div class="card">
     <h2>言いたいことを日本語で</h2>
@@ -99,6 +99,7 @@ async function health() {
   try {
     const h = await api("/api/health");
     failLabels = h.fail_labels || failLabels;
+    document.getElementById("ver").textContent = h.version ? "v" + h.version : "";
     document.getElementById("status").innerHTML =
       `Ollama: ${h.ollama_ok ? "✅" : "❌"}<br>保存先: ${h.storage_is_drive ? "Google Drive ✅" : "ローカル（Drive未検出）"}`;
     const sel = document.getElementById("model");
