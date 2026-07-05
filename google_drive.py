@@ -146,3 +146,11 @@ class GasDriveClient:
         res = self._post({"action": "getFile", "name": name})
         c = res.get("content")
         return c.encode("utf-8") if c is not None else None
+
+    def ping(self):
+        """実際にGASを呼んで通信できるか確認。エラー文字列 or None を返す。"""
+        try:
+            self._post({"action": "getFile", "name": "__ping__"})
+            return None
+        except Exception as e:
+            return str(e)

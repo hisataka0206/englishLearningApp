@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.9.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.10.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -223,6 +223,29 @@ def delete_sentence(sentence_id):
     return {"deleted": sentence_id}, None
 
 
+def list_words(limit=50):
+    words = _load("words.json")
+    sentences = {s["id"]: s for s in _load("sentences.json")}
+    out = []
+    for w in reversed(words[-500:]):
+        src = sentences.get(w.get("source_id"), {})
+        out.append({"id": w["id"], "word": w["word"], "meaning": w.get("meaning", ""),
+                    "example": w.get("example") or src.get("english", ""),
+                    "created": w.get("created", "")[:10]})
+    return out[:limit], None
+
+
+def delete_word(word_id):
+    with LOCK:
+        items = _load("words.json")
+        remaining = [w for w in items if w["id"] != word_id]
+        if len(remaining) == len(items):
+            return None, "word not found"
+        _save("words.json", remaining)
+        regen_markdown()
+    return {"deleted": word_id}, None
+
+
 def save_word(word, meaning, example="", source_id=None):
     with LOCK:
         items = _load("words.json")
@@ -416,14 +439,22 @@ class Handler(BaseHTTPRequestHandler):
                 mode = "sync"
             else:
                 mode = "local"
+            drive_err = None
+            drive_ready = bool(DRIVE and DRIVE.configured())
+            if drive_ready and hasattr(DRIVE, "ping"):
+                drive_err = DRIVE.ping()  # 実通信で確認（設定値だけで✅にしない）
+                drive_ready = drive_err is None
             self._ok({"version": APP_VERSION,
                       "ollama_ok": ollama_err is None, "ollama_error": ollama_err,
                       "models": models, "default_model": CFG["ollama"]["model"],
                       "storage_path": data_dir, "storage_mode": mode,
-                      "drive_ready": bool(DRIVE and DRIVE.configured()),
+                      "drive_ready": drive_ready, "drive_error": drive_err,
                       "fail_labels": CFG.get("fail_labels", ["Fail"])})
         elif self.path.startswith("/api/sentences"):
             data, err = list_sentences()
+            self._ok(data) if not err else self._fail(err)
+        elif self.path.startswith("/api/words"):
+            data, err = list_words()
             self._ok(data) if not err else self._fail(err)
         else:
             self._send(404, {"ok": False, "error": "not found"})
@@ -449,6 +480,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._fail("english is required", 400)
             data, err = save_sentence(body.get("japanese", ""), body["english"],
                                       body.get("memo", ""), body.get("marked", ""))
+        elif self.path == "/api/words/delete":
+            if not body.get("id"):
+                return self._fail("id is required", 400)
+            data, err = delete_word(body["id"])
         elif self.path == "/api/words":
             if not body.get("word"):
                 return self._fail("word is required", 400)
