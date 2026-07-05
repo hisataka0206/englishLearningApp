@@ -9,9 +9,19 @@
 - `config.json` — [[外部設定ファイル]]。保存先・Ollamaモデル・失敗ラベル等はここで変更。
 - `setup.sh` — 常時起動セットアップ（launchdのLaunchAgent登録）。
 
-## データ保存（Google Drive）
+## データ保存（Google Drive API）
 
-Mac版[[Google Drive]]アプリの同期フォルダを自動検出し、`My Drive/EnglishLearningApp/` に保存します（API・認証は不要）。Driveアプリ未検出時はアプリ内 `data/` に保存されます。保存先を固定したい場合は `config.json` の `storage.data_dir` にパスを指定してください。
+[[Google Drive API]]で指定フォルダ（`config.json` の `storage.drive.folder_id`）に保存します。ローカルの `data/` を作業コピーとして、変更のたびにバックグラウンドでDriveへアップロード（作成/更新）します。起動時にローカルが空ならDriveから取得するので、他のMacへの引っ越しも可能です。
+
+### Drive API の初回設定（1回だけ）
+
+1. [Google Cloud Console](https://console.cloud.google.com) でプロジェクト作成 → 「APIとサービス > ライブラリ」で **Google Drive API を有効化**。
+2. 「OAuth同意画面」→ External → 自分をテストユーザーに追加。
+3. 「認証情報 > 認証情報を作成 > OAuthクライアントID」→ 種類は**デスクトップアプリ**。
+4. 表示された クライアントID／シークレット を `config.json` の `storage.drive.client_id` / `client_secret` に記入（`config.example.json` をコピーして作成）。
+5. `python3 drive_auth.py` を実行 → ブラウザで承認 → `drive_token.json` が保存され完了。
+
+`config.json` と `drive_token.json` は秘密情報のためgit管理外です。旧方式（Drive同期フォルダ）に戻すには `storage.backend` を `"sync"` にします。
 
 - `sentences.json` — 英文データ本体（日本語・英文・メモ・失敗履歴）
 - `words.json` — 単語帳（出典英文のidと紐付け）

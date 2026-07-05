@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.7.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.8.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -40,13 +40,31 @@ def load_config():
 
 CFG = load_config()
 
+try:
+    from google_drive import DriveClient
+except ImportError:
+    DriveClient = None
+
+
+def make_drive():
+    s = CFG.get("storage", {})
+    if s.get("backend") != "drive_api" or DriveClient is None:
+        return None
+    return DriveClient(s.get("drive", {}), BASE_DIR)
+
+
+DRIVE = make_drive()
+DATA_FILES = ["sentences.json", "words.json", "sentences.md", "words.md"]
+
 
 # ---------------------------------------------------------------- storage
 def resolve_data_dir():
-    """Return the data folder. "AUTO" finds the Google Drive sync folder."""
+    """Return the local data folder (working copy; Drive API pushes from here)."""
     conf = CFG.get("storage", {}).get("data_dir", "AUTO")
     if conf and conf != "AUTO":
         path = os.path.expanduser(conf)
+    elif CFG.get("storage", {}).get("backend") == "drive_api":
+        path = os.path.join(BASE_DIR, "data")  # local cache; pushed via API
     else:
         candidates = glob.glob(os.path.expanduser(
             "~/Library/CloudStorage/GoogleDrive-*/My Drive"))
@@ -56,6 +74,42 @@ def resolve_data_dir():
             path = os.path.join(BASE_DIR, "data")  # fallback: local folder
     os.makedirs(path, exist_ok=True)
     return path
+
+
+def drive_push_async():
+    """Upload all data files to the Drive folder in the background."""
+    if not (DRIVE and DRIVE.configured()):
+        return
+    def _run():
+        for name in DATA_FILES:
+            p = _file(name)
+            if not os.path.exists(p):
+                continue
+            try:
+                mime = "text/markdown" if name.endswith(".md") else "application/json"
+                with open(p, "rb") as f:
+                    DRIVE.upsert(name, f.read(), mime)
+            except Exception as e:
+                print(f"[drive] push {name} failed: {e}")
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def drive_pull_initial():
+    """On startup, fetch data files from Drive if we have no local copy."""
+    if not (DRIVE and DRIVE.configured()):
+        return
+    for name in ("sentences.json", "words.json"):
+        p = _file(name)
+        if os.path.exists(p):
+            continue
+        try:
+            data = DRIVE.download(name)
+            if data:
+                with open(p, "wb") as f:
+                    f.write(data)
+                print(f"[drive] pulled {name}")
+        except Exception as e:
+            print(f"[drive] pull {name} failed: {e}")
 
 
 def _file(name):
@@ -112,6 +166,7 @@ def regen_markdown():
         lines.append(f"| **{w['word']}** | {w.get('meaning','')} | {example} | {w['created']} |")
     with open(_file("words.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
+    drive_push_async()  # 変更のたびにDriveフォルダへAPIで反映
 
 
 def save_sentence(japanese, english, memo=""):
@@ -343,16 +398,24 @@ class Handler(BaseHTTPRequestHandler):
             with open(os.path.join(BASE_DIR, "index.html"), "rb") as f:
                 self._send(200, body=f.read(), ctype="text/html")
         elif self.path == "/api/health":
+            global DRIVE
             CFG = load_config()  # allow editing config.json without restart
+            DRIVE = make_drive()
             models, ollama_err = list_models()
             if not ollama_err:
                 warm_up()  # preload model while the user is typing
             data_dir = resolve_data_dir()
-            drive = "CloudStorage/GoogleDrive" in data_dir
+            if CFG.get("storage", {}).get("backend") == "drive_api":
+                mode = "drive_api"
+            elif "CloudStorage/GoogleDrive" in data_dir:
+                mode = "sync"
+            else:
+                mode = "local"
             self._ok({"version": APP_VERSION,
                       "ollama_ok": ollama_err is None, "ollama_error": ollama_err,
                       "models": models, "default_model": CFG["ollama"]["model"],
-                      "storage_path": data_dir, "storage_is_drive": drive,
+                      "storage_path": data_dir, "storage_mode": mode,
+                      "drive_ready": bool(DRIVE and DRIVE.configured()),
                       "fail_labels": CFG.get("fail_labels", ["Fail"])})
         elif self.path.startswith("/api/sentences"):
             data, err = list_sentences()
@@ -412,6 +475,9 @@ def main():
     port = CFG["server"].get("port", 8765)
     print(f"English Learning App v{APP_VERSION}: http://localhost:{port}")
     print(f"Data folder: {resolve_data_dir()}")
+    if DRIVE:
+        print(f"Drive API: {'ready' if DRIVE.configured() else 'NOT authorized - run python3 drive_auth.py'}")
+        drive_pull_initial()
     warm_up()  # preload the model at startup
     ThreadingHTTPServer((host, port), Handler).serve_forever()
 

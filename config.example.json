@@ -1,0 +1,22 @@
+{
+  "storage": {
+    "backend": "drive_api",
+    "data_dir": "AUTO",
+    "drive": {
+      "folder_id": "1Ti5_KbmpML5NAfUxUW6OM3OZcSG6dQjb",
+      "client_id": "PUT_YOUR_GOOGLE_OAUTH_CLIENT_ID",
+      "client_secret": "PUT_YOUR_GOOGLE_OAUTH_CLIENT_SECRET",
+      "token_file": "drive_token.json"
+    }
+  },
+  "ollama": {
+    "base_url": "http://localhost:11434",
+    "model": "qwen2.5:1.5b",
+    "keep_alive": "24h"
+  },
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8765
+  },
+  "fail_labels": ["Fail", "F", "T", "R", "V"]
+}

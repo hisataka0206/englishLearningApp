@@ -288,8 +288,11 @@ async function health() {
     const h = await api("/api/health");
     failLabels = h.fail_labels || failLabels;
     document.getElementById("ver").textContent = h.version ? "v" + h.version : "";
+    const st = h.storage_mode === "drive_api"
+      ? (h.drive_ready ? "Drive API ✅" : "Drive API ❌要認証")
+      : (h.storage_mode === "sync" ? "Drive同期 ✅" : "ローカル");
     document.getElementById("status").innerHTML =
-      `Ollama: ${h.ollama_ok ? "✅" : "❌"}<br>保存先: ${h.storage_is_drive ? "Google Drive ✅" : "ローカル（Drive未検出）"}`;
+      `Ollama: ${h.ollama_ok ? "✅" : "❌"}<br>保存先: ${st}`;
     const sel = document.getElementById("model");
     sel.innerHTML = "";
     (h.models.length ? h.models : [h.default_model]).forEach(m => {
