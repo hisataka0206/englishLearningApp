@@ -98,8 +98,9 @@
 </div></div>
 
 <script>
-let current = { japanese:"", english:"", keywords:[], pageId:null };
+let current = { japanese:"", english:"", marked:"", keywords:[], pageId:null };
 let failLabels = ["Fail"];
+let sentCache = {};
 
 async function api(path, opts) {
   const r = await fetch(path, opts ? { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(opts) } : undefined);
@@ -231,7 +232,9 @@ function splitModeChanged() {
 
 function englishEdited(el) {
   // 英訳の手編集を反映：以後の発音・保存・単語登録はこの内容を使う
-  current.english = el.textContent.replace(/[/|｜／]+/g, " ").replace(/\s+/g, " ").trim();
+  current.marked = el.textContent.replace(/\s+/g, " ").trim();  // 区切り「/」込み
+  current.english = current.marked.replace(/\s*[/|｜／]+\s*/g, " ").replace(/\s+/g, " ").trim();
+  document.getElementById("btnSave").disabled = false;  // 再学習中も編集したら新規保存できる
 }
 
 (function initSplitMode() {
@@ -312,7 +315,7 @@ async function doTranslate() {
   try {
     const model = document.getElementById("model").value;
     const d = await api("/api/translate", { japanese: ja, model });
-    current = { japanese: ja, english: d.english, keywords: [], pageId: null };
+    current = { japanese: ja, english: d.english, marked: d.english, keywords: [], pageId: null };
     document.getElementById("resultCard").style.display = "";
     document.getElementById("english").textContent = d.english;
     document.getElementById("kwBox").innerHTML = "<span style='color:var(--muted);font-size:13px'>キーワード抽出中…</span>";
@@ -347,7 +350,7 @@ async function saveSentence() {
   const btn = document.getElementById("btnSave");
   btn.disabled = true; msg("msgSave", "保存中…", true);
   try {
-    const d = await api("/api/sentences", { japanese: current.japanese, english: current.english });
+    const d = await api("/api/sentences", { japanese: current.japanese, english: current.english, marked: current.marked });
     current.pageId = d.id;
     msg("msgSave", "Google Driveに保存しました", true);
     loadSentences();
@@ -373,7 +376,9 @@ async function loadSentences() {
   try {
     const list = await api("/api/sentences");
     box.innerHTML = list.length ? "" : "まだありません";
+    sentCache = {};
     list.forEach(s => {
+      sentCache[s.id] = s;
       const d = document.createElement("div");
       d.className = "sent";
       const failBtns = failLabels.map(l =>
@@ -383,6 +388,7 @@ async function loadSentences() {
       d.innerHTML = `<div class="en">${s.english}</div><div class="ja">${s.japanese}</div>
         <div class="ja">登録 ${s.created} / <span class="pr">${practiced}</span></div>
         <div class="row"><button class="small ghost" onclick="practice(this,'${s.id}')">🔊</button>
+        <button class="small ghost" onclick="study('${s.id}')">📖 再学習</button>
         ${failBtns}<span class="badge">fail: ${s.fail_count}</span>
         <button class="small ghost" style="margin-left:auto" onclick="delSentence('${s.id}')">🗑</button></div>`;
       box.appendChild(d);
@@ -390,9 +396,32 @@ async function loadSentences() {
   } catch(e) { box.textContent = e.message; }
 }
 
+async function study(id) {
+  // 保存済みの英文を呼び出して再学習：区切り位置も復元して再生
+  const s = sentCache[id];
+  if (!s) return;
+  document.getElementById("ja").value = s.japanese;
+  current = { japanese: s.japanese, english: s.english,
+              marked: s.marked || s.english, keywords: [], pageId: id };
+  document.getElementById("resultCard").style.display = "";
+  document.getElementById("english").textContent = current.marked;
+  document.getElementById("btnSave").disabled = true;
+  msg("msgSave", "保存済みの英文を再学習中（編集や単語登録も可能）", true);
+  document.getElementById("kwBox").innerHTML =
+    "<span style='color:var(--muted);font-size:13px'>キーワード抽出中…</span>";
+  document.getElementById("kwActions").style.display = "none";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  playerLoad(current.marked);
+  api("/api/practice", { id }).then(loadSentences).catch(() => {});  // 実施を自動記録
+  api("/api/keywords", { english: s.english, model: document.getElementById("model").value })
+    .then(k => { current.keywords = k.keywords || []; renderKeywords(); })
+    .catch(() => { document.getElementById("kwBox").innerHTML = ""; });
+}
+
 async function practice(btn, id) {
-  // 発音した瞬間に実施日時を自動記録（節分解プレイヤーで再生）
-  playerLoad(btn.closest(".sent").querySelector(".en").textContent);
+  // 発音した瞬間に実施日時を自動記録（節分解プレイヤーで再生・区切り位置も復元）
+  const s = sentCache[id];
+  playerLoad((s && s.marked) || btn.closest(".sent").querySelector(".en").textContent);
   try {
     const d = await api("/api/practice", { id });
     btn.closest(".sent").querySelector(".pr").textContent =

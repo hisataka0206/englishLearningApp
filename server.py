@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.8.1"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.9.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -172,10 +172,11 @@ def regen_markdown():
     drive_push_async()  # 変更のたびにDriveフォルダへAPIで反映
 
 
-def save_sentence(japanese, english, memo=""):
+def save_sentence(japanese, english, memo="", marked=""):
     with LOCK:
         items = _load("sentences.json")
         rec = {"id": uuid.uuid4().hex, "japanese": japanese, "english": english,
+               "marked": marked or english,  # 「/」区切り位置付きの原文
                "memo": memo, "created": now(), "fails": []}
         items.append(rec)
         _save("sentences.json", items)
@@ -189,6 +190,7 @@ def list_sentences(limit=20):
     for s in reversed(items[-200:]):
         practices = s.get("practices", [])
         out.append({"id": s["id"], "english": s["english"], "japanese": s["japanese"],
+                    "marked": s.get("marked") or s["english"],
                     "created": s.get("created", "")[:10],
                     "fail_count": len(s.get("fails", [])),
                     "practice_count": len(practices),
@@ -446,7 +448,7 @@ class Handler(BaseHTTPRequestHandler):
             if not body.get("english"):
                 return self._fail("english is required", 400)
             data, err = save_sentence(body.get("japanese", ""), body["english"],
-                                      body.get("memo", ""))
+                                      body.get("memo", ""), body.get("marked", ""))
         elif self.path == "/api/words":
             if not body.get("word"):
                 return self._fail("word is required", 400)
