@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.3.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.3.1"  # 機能変更時にここを更新（画面右上に表示される）
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -218,7 +218,7 @@ English sentence:
 """
 
 
-def chat(prompt, model=None, json_mode=False, num_predict=None):
+def chat(prompt, model=None, json_mode=False, num_predict=None, think=None):
     o = CFG["ollama"]
     payload = {
         "model": model or o["model"],
@@ -231,29 +231,54 @@ def chat(prompt, model=None, json_mode=False, num_predict=None):
         payload["format"] = "json"
     if num_predict:
         payload["options"]["num_predict"] = num_predict
+    if think is not None:
+        payload["think"] = think  # reasoning models: skip thinking phase
     res, err = http_json(f"{o['base_url']}/api/chat", payload)
     if err:
         return None, f"Ollama error: {err}"
-    return (res.get("message") or {}).get("content", ""), None
+    msg = res.get("message") or {}
+    if not (msg.get("content") or "").strip():
+        print(f"[ollama] empty content. raw message: {json.dumps(msg, ensure_ascii=False)[:400]}")
+    return msg.get("content", ""), None
+
+
+def _clean(text):
+    """Strip <think> blocks (reasoning models) and surrounding quotes."""
+    text = re.sub(r"<think>.*?(</think>|$)", "", text or "", flags=re.S)
+    return text.strip().strip('"').strip()
 
 
 def translate(japanese, model=None):
     """Fast path: translation only (short plain-text output)."""
-    content, err = chat(TRANSLATE_PROMPT + japanese, model, num_predict=150)
+    prompt = TRANSLATE_PROMPT + japanese
+    content, err = chat(prompt, model, num_predict=512)
     if err:
         return None, err
-    english = content.strip().strip('"').strip()
+    english = _clean(content)
+    if not english:  # reasoning model? retry with thinking disabled
+        content, err2 = chat(prompt, model, think=False)
+        if not err2:
+            english = _clean(content)
+    if not english:  # last resort: no token cap, no extras
+        content, err3 = chat(prompt, model)
+        if not err3:
+            english = _clean(content)
     if not english:
-        return None, "LLM returned empty translation"
+        used = model or CFG["ollama"]["model"]
+        return None, (f"モデル '{used}' から英文が得られませんでした。"
+                      "思考型モデル（qwen3, deepseek-r1等）の場合は "
+                      "qwen2.5:1.5b など通常モデルに切り替えてください "
+                      "（詳細は logs/server.log）")
     return {"english": english}, None
 
 
 def extract_keywords(english, model=None):
     """Slow path: fetched by the UI in the background after translation."""
     content, err = chat(KEYWORDS_PROMPT + english, model, json_mode=True,
-                        num_predict=200)
+                        num_predict=400)
     if err:
         return None, err
+    content = _clean(content)
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError:
