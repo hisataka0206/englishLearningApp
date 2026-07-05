@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.11.3"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.11.4"  # 機能変更時にここを更新（画面右上に表示される）
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -295,9 +295,10 @@ Japanese text:
 
 KEYWORDS_PROMPT = """From the English sentence below, pick up to 3 keywords/phrases
 worth memorizing for a Japanese learner.
-For each keyword, "meaning" MUST be the corresponding expression copied from the
-original Japanese text below. Use the exact wording that appears in the Japanese
-text. Do NOT invent a new translation of the English word.
+Rules:
+- "word" MUST be English, copied exactly from the English sentence.
+- "meaning" MUST be Japanese, copied from the original Japanese text below
+  (the expression that corresponds to the word). Do NOT invent a new translation.
 Respond ONLY with JSON: {"keywords": [{"word": "...", "meaning": "..."}]}
 """
 
@@ -324,6 +325,10 @@ def chat(prompt, model=None, json_mode=False, num_predict=None, think=None):
     if not (msg.get("content") or "").strip():
         print(f"[ollama] empty content. raw message: {json.dumps(msg, ensure_ascii=False)[:400]}")
     return msg.get("content", ""), None
+
+
+def _has_japanese(s):
+    return bool(re.search(r"[぀-ヿ㐀-鿿]", s or ""))
 
 
 def _clean(text):
@@ -373,10 +378,18 @@ def extract_keywords(english, japanese="", model=None):
         if not m:
             return {"keywords": []}, None
         parsed = json.loads(m.group(0))
-    keywords = [
-        {"word": str(k.get("word", "")).strip(), "meaning": str(k.get("meaning", "")).strip()}
-        for k in parsed.get("keywords", []) if isinstance(k, dict) and k.get("word")
-    ]
+    keywords = []
+    for k in parsed.get("keywords", []):
+        if not (isinstance(k, dict) and k.get("word")):
+            continue
+        w = str(k.get("word", "")).strip()
+        m = str(k.get("meaning", "")).strip()
+        # LLMがword/meaningを取り違えた場合の補正：英語⇔日本語が逆なら入れ替え
+        if _has_japanese(w) and not _has_japanese(m):
+            w, m = m, w
+        if _has_japanese(w) or not w:
+            continue  # wordが英語でないものは除外
+        keywords.append({"word": w, "meaning": m})
     return {"keywords": keywords[:3]}, None
 
 
