@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.13.1"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.13.2"  # 機能変更時にここを更新（画面右上に表示される）
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -324,6 +324,8 @@ def http_json(url, payload=None, timeout=120):
 
 
 TRANSLATE_PROMPT = """Translate the Japanese text into natural, conversational English.
+The learner is an elementary-school child, so use simple, friendly words
+that a kid would actually say. Keep it short and natural.
 Output ONLY the English translation. No explanations, no quotes.
 
 Japanese text:
