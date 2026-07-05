@@ -423,19 +423,6 @@ async function study(id) {
     .catch(() => { document.getElementById("kwBox").innerHTML = ""; });
 }
 
-async function practice(btn, id) {
-  // 発音した瞬間に実施日時を自動記録（節分解プレイヤーで再生・区切り位置も復元）
-  const s = sentCache[id];
-  if (!s) return;
-  playerLoad(s.marked || s.english);
-  try {
-    const d = await api("/api/practice", { id });
-    s.practice_count = d.practice_count; s.last_practiced = d.last_practiced;
-    const pr = btn.closest("tr").querySelector(".pr");
-    if (pr) pr.innerHTML = `${d.practice_count}回<br>${d.last_practiced}`;
-  } catch(e) { /* 記録に失敗しても発音は継続 */ }
-}
-
 async function delSentence(id) {
   if (!confirm("この英文を削除しますか？")) return;
   try {
@@ -475,8 +462,7 @@ function sentTable(list, withDate) {
       <td>${esc(s.english)}<div class="sub">${esc(s.japanese)}</div></td>
       <td class="sub pr">${s.practice_count ? s.practice_count + "回<br>" + s.last_practiced : "未"}</td>
       <td><span class="badge failc">${s.fail_count}</span><div>${fails}</div></td>
-      <td style="white-space:nowrap"><button class="icon" onclick="practice(this,'${s.id}')">🔊</button>
-      <button class="icon" onclick="study('${s.id}')">📖</button>
+      <td style="white-space:nowrap"><button class="icon" onclick="study('${s.id}')" title="呼び出して発音・再学習">🔊</button>
       <button class="icon" onclick="delSentence('${s.id}')">🗑</button></td></tr>`;
   });
   return h + "</table>";
