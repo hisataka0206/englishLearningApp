@@ -225,7 +225,7 @@ function playerSetText(text) {
   player.phrases.forEach((p, i) => {
     const c = document.createElement("span");
     c.className = "chip"; c.textContent = p;
-    c.onclick = () => { player.idx = i; playerPlay(); };  // タップした節から再生
+    c.onclick = () => playerPlayOne(i);  // タップした節だけを発音
     box.appendChild(c);
   });
   document.getElementById("player").style.display = "block";
@@ -281,6 +281,16 @@ function playerPlay() {
     speechSynthesis.speak(u);
   };
   speakNext();
+}
+
+function playerPlayOne(i) {
+  // 節を単発で発音（続きへは進まない）。▶再開を押せばこの節から通し再生
+  player.playing = false;
+  player.gen++;
+  speechSynthesis.cancel();
+  player.idx = i;
+  playerRender();
+  speechSynthesis.speak(makeUtter(player.phrases[i]));
 }
 
 function playerPause() {
