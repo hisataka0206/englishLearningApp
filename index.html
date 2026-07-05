@@ -19,7 +19,8 @@
   .small { padding:6px 10px; font-size:13px; border-radius:8px; }
   button:disabled { opacity:.45; }
   .row { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; align-items:center; }
-  #english { font-size:19px; line-height:1.5; min-height:28px; }
+  #english { font-size:19px; line-height:1.5; min-height:28px; border:1px dashed transparent; border-radius:8px; padding:4px; }
+  #english:focus { outline:none; border-color:var(--accent); background:#f8faff; }
   .kw { display:flex; align-items:center; gap:8px; padding:7px 4px; border-bottom:1px solid #f0f1f5; font-size:15px; }
   .kw:last-child { border-bottom:0; }
   .kw .m { color:var(--muted); font-size:13px; }
@@ -62,8 +63,8 @@
   </div>
 
   <div class="card" id="resultCard" style="display:none">
-    <h2>英訳</h2>
-    <div id="english"></div>
+    <h2>英訳（タップで編集可。「/」を入れるとその位置で発音を区切ります）</h2>
+    <div id="english" contenteditable="true" oninput="englishEdited(this)"></div>
     <div class="row">
       <button class="ghost" onclick="playerLoad(document.getElementById('english').textContent)">🔊 発音</button>
       <button class="primary" id="btnSave" onclick="saveSentence()">保存</button>
@@ -86,6 +87,11 @@
   <div class="row" style="margin-top:0">
     <button class="primary" id="btnPlay" onclick="playerToggle()">⏸ 一時停止</button>
     <button class="ghost" onclick="playerRestart()">⏮ 最初から</button>
+    <select id="splitMode" onchange="splitModeChanged()">
+      <option value="normal">区切り: ふつう</option>
+      <option value="fine">区切り: 細かめ</option>
+      <option value="sentence">区切り: 文単位</option>
+    </select>
     <button class="ghost" style="margin-left:auto" onclick="playerClose()">✕ 閉じる</button>
   </div>
 </div></div>
@@ -136,23 +142,33 @@ function speak(text) {  // 短い単語・サンプル用（プレイヤーを�
 // ---- フレーズプレイヤー：節ごとに分解して再生・一時停止・途中再開 ----
 const CONJ = /\s+(?=(?:and|but|or|so|because|when|while|that|which|who|whose|where|after|before|if|although|though|until|unless|since|as)\b)/i;
 
-function splitPhrases(text) {
+function splitPhrases(text, mode) {
+  mode = mode || document.getElementById("splitMode").value;
+  // 手動指定：文中の「/」「|」でユーザーが区切り位置をコントロール
+  if (/[/|｜／]/.test(text)) {
+    const out = text.split(/[/|｜／]+/).map(s => s.trim()).filter(Boolean);
+    if (out.length > 1) return out;
+  }
+  if (mode === "sentence") {
+    return (text.match(/[^.!?]+[.!?]*/g) || [text]).map(s => s.trim()).filter(Boolean);
+  }
+  const limit = mode === "fine" ? 4 : 8;  // この語数を超えたら接続詞でも分割
   const parts = text.match(/[^,;:.!?]+[,;:.!?]*/g) || [text];
   const out = [];
   parts.forEach(p => {
     p = p.trim();
     if (!p) return;
-    if (p.split(/\s+/).length > 8) {
+    if (p.split(/\s+/).length > limit) {
       p.split(CONJ).forEach(sub => { sub = sub.trim(); if (sub) out.push(sub); });
     } else out.push(p);
   });
   return out.length ? out : [text];
 }
 
-const player = { phrases: [], idx: 0, playing: false, gen: 0 };
+const player = { text: "", phrases: [], idx: 0, playing: false, gen: 0 };
 
-function playerLoad(text) {
-  speechSynthesis.cancel();
+function playerSetText(text) {
+  player.text = text;
   player.phrases = splitPhrases(text);
   player.idx = 0;
   const box = document.getElementById("phrases");
@@ -165,8 +181,32 @@ function playerLoad(text) {
   });
   document.getElementById("player").style.display = "block";
   document.body.style.paddingBottom = "140px";
+}
+
+function playerLoad(text) {
+  speechSynthesis.cancel();
+  playerSetText(text);
   playerPlay();
 }
+
+function splitModeChanged() {
+  localStorage.setItem("splitMode", document.getElementById("splitMode").value);
+  if (player.text) {  // 表示中の文を新しい区切りで再分解（停止状態で待機）
+    playerPause();
+    playerSetText(player.text);
+    playerRender();
+  }
+}
+
+function englishEdited(el) {
+  // 英訳の手編集を反映：以後の発音・保存・単語登録はこの内容を使う
+  current.english = el.textContent.replace(/[/|｜／]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+(function initSplitMode() {
+  const saved = localStorage.getItem("splitMode");
+  if (saved) document.getElementById("splitMode").value = saved;
+})();
 
 function playerRender() {
   document.querySelectorAll("#phrases .chip").forEach((c, i) => {
