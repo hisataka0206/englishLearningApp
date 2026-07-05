@@ -50,12 +50,14 @@
 </head>
 <body>
 <header>English Learning <span id="ver" style="font-size:11px;font-weight:400;opacity:.8"></span>
-  <div style="display:flex;align-items:center;gap:10px">
+  <div style="display:flex;align-items:center;gap:8px">
     <div id="status">…</div>
+    <button id="navBtn" onclick="toggleView()" style="background:rgba(255,255,255,.2);color:#fff;font-size:14px;padding:8px 12px;border-radius:10px">📜 履歴</button>
     <button onclick="location.reload()" style="background:rgba(255,255,255,.2);color:#fff;font-size:18px;padding:8px 12px;border-radius:10px">⟳</button>
   </div>
 </header>
 <main>
+<div id="viewMain">
   <div class="card">
     <h2>言いたいことを日本語で</h2>
     <textarea id="ja" placeholder="例：明日の会議は30分遅れて始まります"></textarea>
@@ -80,7 +82,9 @@
     </div>
     <div class="msg" id="msgSave"></div>
   </div>
+</div>
 
+<div id="viewHistory" style="display:none">
   <div class="card">
     <h2>履歴 <button class="small ghost" onclick="loadHistory()">更新</button></h2>
     <div class="row" style="margin-top:4px;align-items:center">
@@ -92,6 +96,7 @@
     </div>
     <div id="history">読み込み中…</div>
   </div>
+</div>
 </main>
 
 <div id="player"><div class="inner">
@@ -402,9 +407,10 @@ async function saveWords() {
 
 
 async function study(id) {
-  // 保存済みの英文を呼び出して再学習：区切り位置も復元して再生
+  // 保存済みの英文を呼び出して再学習：メイン画面に切り替えて区切りも復元
   const s = sentCache[id];
   if (!s) return;
+  showView("main");
   document.getElementById("ja").value = s.japanese;
   current = { japanese: s.japanese, english: s.english,
               marked: s.marked || s.english, keywords: [], pageId: id };
@@ -429,6 +435,20 @@ async function delSentence(id) {
     await api("/api/delete", { id });
     loadHistory();
   } catch(e) { alert(e.message); }
+}
+
+// ---- 画面切替：メイン（練習） / 履歴 ----
+let view = "main";
+
+function toggleView() { showView(view === "main" ? "history" : "main"); }
+
+function showView(v) {
+  view = v;
+  document.getElementById("viewMain").style.display = v === "main" ? "" : "none";
+  document.getElementById("viewHistory").style.display = v === "history" ? "" : "none";
+  document.getElementById("navBtn").textContent = v === "main" ? "📜 履歴" : "← 戻る";
+  if (v === "history") loadHistory();
+  window.scrollTo(0, 0);
 }
 
 // ---- 履歴機能：日付別 / 英文のみ / 単語のみ を表形式で表示 ----
@@ -524,7 +544,7 @@ async function recFail(btn, id, label) {
 }
 
 speechSynthesis.getVoices();
-health(); loadHistory();
+health(); loadHistory();  // 履歴データは裏で先読み（表示はメイン画面から）
 </script>
 </body>
 </html>
