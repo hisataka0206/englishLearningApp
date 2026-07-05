@@ -53,12 +53,6 @@
       <button class="primary" id="btnTr" onclick="doTranslate()">英語にする</button>
       <select id="model"></select>
     </div>
-    <div class="row" style="align-items:center">
-      <label class="rate">🔊 速さ <input type="range" id="rate" min="0.4" max="1.5" step="0.05" value="0.9" style="width:110px;vertical-align:middle" oninput="rateChanged(this.value)"> <b id="rateVal">0.9</b>x</label>
-      <button class="small ghost" onclick="setRate(0.6)">ゆっくり</button>
-      <button class="small ghost" onclick="setRate(0.9)">ふつう</button>
-      <button class="small ghost" onclick="setRate(1.2)">速い</button>
-    </div>
     <div class="msg" id="msgTr"></div>
   </div>
 
@@ -67,6 +61,7 @@
     <div id="english" contenteditable="true" oninput="englishEdited(this)"></div>
     <div class="row">
       <button class="ghost" onclick="playerLoad(document.getElementById('english').textContent)">🔊 発音</button>
+      <button class="ghost" onmousedown="event.preventDefault()" ontouchend="event.preventDefault();insertSlash()" onclick="insertSlash()">／ 区切り挿入</button>
       <button class="primary" id="btnSave" onclick="saveSentence()">保存</button>
     </div>
     <div id="kwBox" style="margin-top:10px"></div>
@@ -84,7 +79,13 @@
 
 <div id="player"><div class="inner">
   <div id="phrases"></div>
-  <div class="row" style="margin-top:0">
+  <div class="row" style="margin-top:0;align-items:center">
+    <label class="rate">🔊 速さ <input type="range" id="rate" min="0.4" max="1.5" step="0.05" value="0.9" style="width:110px;vertical-align:middle" oninput="rateChanged(this.value)"> <b id="rateVal">0.9</b>x</label>
+    <button class="small ghost" onclick="setRate(0.6)">ゆっくり</button>
+    <button class="small ghost" onclick="setRate(0.9)">ふつう</button>
+    <button class="small ghost" onclick="setRate(1.2)">速い</button>
+  </div>
+  <div class="row" style="margin-top:8px">
     <button class="primary" id="btnPlay" onclick="playerToggle()">⏸ 一時停止</button>
     <button class="ghost" onclick="playerRestart()">⏮ 最初から</button>
     <select id="splitMode" onchange="splitModeChanged()">
@@ -142,13 +143,7 @@ function speak(text) {  // 短い単語・サンプル用（プレイヤーを�
 // ---- フレーズプレイヤー：節ごとに分解して再生・一時停止・途中再開 ----
 const CONJ = /\s+(?=(?:and|but|or|so|because|when|while|that|which|who|whose|where|after|before|if|although|though|until|unless|since|as)\b)/i;
 
-function splitPhrases(text, mode) {
-  mode = mode || document.getElementById("splitMode").value;
-  // 手動指定：文中の「/」「|」でユーザーが区切り位置をコントロール
-  if (/[/|｜／]/.test(text)) {
-    const out = text.split(/[/|｜／]+/).map(s => s.trim()).filter(Boolean);
-    if (out.length > 1) return out;
-  }
+function autoSplit(text, mode) {
   if (mode === "sentence") {
     return (text.match(/[^.!?]+[.!?]*/g) || [text]).map(s => s.trim()).filter(Boolean);
   }
@@ -163,6 +158,42 @@ function splitPhrases(text, mode) {
     } else out.push(p);
   });
   return out.length ? out : [text];
+}
+
+function splitPhrases(text, mode) {
+  mode = mode || document.getElementById("splitMode").value;
+  // 「/」「|」は自動区切りへの追加の強制区切り（置き換えではない）
+  const segments = text.split(/[/|｜／]+/).map(s => s.trim()).filter(Boolean);
+  const out = [];
+  (segments.length ? segments : [text]).forEach(seg => out.push(...autoSplit(seg, mode)));
+  return out.length ? out : [text];
+}
+
+// ---- カーソル位置に「/」を挿入（英訳編集エリア用） ----
+let savedRange = null;
+document.addEventListener("selectionchange", () => {
+  const sel = document.getSelection();
+  const en = document.getElementById("english");
+  if (sel.rangeCount && en.contains(sel.anchorNode)) {
+    savedRange = sel.getRangeAt(0).cloneRange();
+  }
+});
+
+function insertSlash() {
+  const en = document.getElementById("english");
+  if (!savedRange || !en.contains(savedRange.startContainer)) {
+    msg("msgSave", "区切りたい位置を英文内でタップしてから押してください", false);
+    return;
+  }
+  savedRange.deleteContents();
+  const node = document.createTextNode(" / ");
+  savedRange.insertNode(node);
+  savedRange.setStartAfter(node);  // カーソルを挿入後ろへ
+  savedRange.collapse(true);
+  const sel = document.getSelection();
+  sel.removeAllRanges(); sel.addRange(savedRange);
+  englishEdited(en);
+  msg("msgSave", "", true);
 }
 
 const player = { text: "", phrases: [], idx: 0, playing: false, gen: 0 };
@@ -180,7 +211,7 @@ function playerSetText(text) {
     box.appendChild(c);
   });
   document.getElementById("player").style.display = "block";
-  document.body.style.paddingBottom = "140px";
+  document.body.style.paddingBottom = "190px";
 }
 
 function playerLoad(text) {
