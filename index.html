@@ -118,14 +118,21 @@ async function doTranslate() {
   const btn = document.getElementById("btnTr");
   btn.disabled = true; msg("msgTr", "翻訳中…（ローカルLLM）", true);
   try {
-    const d = await api("/api/translate", { japanese: ja, model: document.getElementById("model").value });
-    current = { japanese: ja, english: d.english, keywords: d.keywords, pageId: null };
+    const model = document.getElementById("model").value;
+    const d = await api("/api/translate", { japanese: ja, model });
+    current = { japanese: ja, english: d.english, keywords: [], pageId: null };
     document.getElementById("resultCard").style.display = "";
     document.getElementById("english").textContent = d.english;
-    renderKeywords();
+    document.getElementById("kwBox").innerHTML = "<span style='color:var(--muted);font-size:13px'>キーワード抽出中…</span>";
+    document.getElementById("kwActions").style.display = "none";
     msg("msgTr", "", true); msg("msgSave", "", true);
     document.getElementById("btnSave").disabled = false;
-    speak(d.english);
+    speak(d.english);  // 英文が出た時点ですぐ発音（キーワードは裏で取得）
+    api("/api/keywords", { english: d.english, model }).then(k => {
+      if (current.english !== d.english) return;
+      current.keywords = k.keywords || [];
+      renderKeywords();
+    }).catch(() => { document.getElementById("kwBox").innerHTML = ""; });
   } catch(e) { msg("msgTr", e.message, false); }
   btn.disabled = false;
 }

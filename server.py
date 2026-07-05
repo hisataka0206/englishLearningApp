@@ -168,45 +168,75 @@ def http_json(url, payload=None, timeout=120):
         return None, str(e)
 
 
-TRANSLATE_PROMPT = """You are an English teacher for a Japanese learner.
-Translate the Japanese text into natural, conversational English.
-Then pick up to 5 important keywords/phrases from your English translation
-that are worth memorizing, with a short Japanese meaning for each.
-Respond ONLY with JSON in this exact shape:
-{"english": "...", "keywords": [{"word": "...", "meaning": "..."}]}
+TRANSLATE_PROMPT = """Translate the Japanese text into natural, conversational English.
+Output ONLY the English translation. No explanations, no quotes.
 
 Japanese text:
 """
 
+KEYWORDS_PROMPT = """From the English sentence below, pick up to 3 keywords/phrases
+worth memorizing for a Japanese learner, each with a short Japanese meaning.
+Respond ONLY with JSON: {"keywords": [{"word": "...", "meaning": "..."}]}
 
-def translate(japanese, model=None):
+English sentence:
+"""
+
+
+def chat(prompt, model=None, json_mode=False, num_predict=None):
     o = CFG["ollama"]
     payload = {
         "model": model or o["model"],
-        "messages": [{"role": "user", "content": TRANSLATE_PROMPT + japanese}],
-        "format": "json",
+        "messages": [{"role": "user", "content": prompt}],
         "stream": False,
+        "keep_alive": o.get("keep_alive", "24h"),  # keep model in memory
         "options": {"temperature": 0.3},
     }
+    if json_mode:
+        payload["format"] = "json"
+    if num_predict:
+        payload["options"]["num_predict"] = num_predict
     res, err = http_json(f"{o['base_url']}/api/chat", payload)
     if err:
         return None, f"Ollama error: {err}"
-    content = (res.get("message") or {}).get("content", "")
+    return (res.get("message") or {}).get("content", ""), None
+
+
+def translate(japanese, model=None):
+    """Fast path: translation only (short plain-text output)."""
+    content, err = chat(TRANSLATE_PROMPT + japanese, model, num_predict=150)
+    if err:
+        return None, err
+    english = content.strip().strip('"').strip()
+    if not english:
+        return None, "LLM returned empty translation"
+    return {"english": english}, None
+
+
+def extract_keywords(english, model=None):
+    """Slow path: fetched by the UI in the background after translation."""
+    content, err = chat(KEYWORDS_PROMPT + english, model, json_mode=True,
+                        num_predict=200)
+    if err:
+        return None, err
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError:
         m = re.search(r"\{.*\}", content, re.S)
         if not m:
-            return None, f"LLM returned non-JSON: {content[:200]}"
+            return {"keywords": []}, None
         parsed = json.loads(m.group(0))
-    english = (parsed.get("english") or "").strip()
-    if not english:
-        return None, "LLM returned empty translation"
     keywords = [
         {"word": str(k.get("word", "")).strip(), "meaning": str(k.get("meaning", "")).strip()}
         for k in parsed.get("keywords", []) if isinstance(k, dict) and k.get("word")
     ]
-    return {"english": english, "keywords": keywords[:5]}, None
+    return {"keywords": keywords[:3]}, None
+
+
+def warm_up():
+    """Load the model into memory so the first request is fast."""
+    def _run():
+        chat("Hi", num_predict=1)
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def list_models():
@@ -254,6 +284,8 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/health":
             CFG = load_config()  # allow editing config.json without restart
             models, ollama_err = list_models()
+            if not ollama_err:
+                warm_up()  # preload model while the user is typing
             data_dir = resolve_data_dir()
             drive = "CloudStorage/GoogleDrive" in data_dir
             self._ok({"ollama_ok": ollama_err is None, "ollama_error": ollama_err,
@@ -277,6 +309,11 @@ class Handler(BaseHTTPRequestHandler):
             if not japanese:
                 return self._fail("japanese is required", 400)
             data, err = translate(japanese, body.get("model"))
+        elif self.path == "/api/keywords":
+            english = (body.get("english") or "").strip()
+            if not english:
+                return self._fail("english is required", 400)
+            data, err = extract_keywords(english, body.get("model"))
         elif self.path == "/api/sentences":
             if not body.get("english"):
                 return self._fail("english is required", 400)
@@ -305,6 +342,7 @@ def main():
     port = CFG["server"].get("port", 8765)
     print(f"English Learning App server: http://localhost:{port}")
     print(f"Data folder: {resolve_data_dir()}")
+    warm_up()  # preload the model at startup
     ThreadingHTTPServer((host, port), Handler).serve_forever()
 
 
