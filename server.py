@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.10.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.11.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -184,7 +184,7 @@ def save_sentence(japanese, english, memo="", marked=""):
     return {"id": rec["id"]}, None
 
 
-def list_sentences(limit=20):
+def list_sentences(limit=200):
     items = _load("sentences.json")
     out = []
     for s in reversed(items[-200:]):
@@ -223,7 +223,7 @@ def delete_sentence(sentence_id):
     return {"deleted": sentence_id}, None
 
 
-def list_words(limit=50):
+def list_words(limit=500):
     words = _load("words.json")
     sentences = {s["id"]: s for s in _load("sentences.json")}
     out = []
