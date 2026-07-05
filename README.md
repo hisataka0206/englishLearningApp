@@ -31,7 +31,7 @@
 - `words.json` — 単語帳（出典英文のidと紐付け）
 - `sentences.md` / `words.md` — スマホのDriveアプリでも読みやすい自動生成ビュー
 
-失敗履歴は英文ごとに「ラベル（Fail / F / T / R / V。`config.json` の `fail_labels` で変更可）＋日時」で蓄積され、`sentences.md` にも一覧表示されます。
+失敗履歴は英文ごとに「Fail＋日時」で蓄積され、`sentences.md` にも一覧表示されます（ラベルを増やしたい場合は `config.json` の `fail_labels` に追加）。
 
 ## 初回セットアップ（1回だけ。以後ユーザーは何も意識しない運用）
 

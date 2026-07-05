@@ -22,5 +22,5 @@
     "host": "0.0.0.0",
     "port": 8765
   },
-  "fail_labels": ["Fail", "F", "T", "R", "V"]
+  "fail_labels": ["Fail"]
 }
