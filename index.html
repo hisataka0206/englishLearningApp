@@ -165,6 +165,7 @@ function speak(text) {  // 短い単語・サンプル用（プレイヤーを�
 
 // ---- フレーズプレイヤー：節ごとに分解して再生・一時停止・途中再開 ----
 const CONJ = /\s+(?=(?:and|but|or|so|because|when|while|that|which|who|whose|where|after|before|if|although|though|until|unless|since|as)\b)/i;
+const PREP = /\s+(?=(?:to|in|on|at|with|for|from|about|into|over|under|around|through|during|near|behind|between)\b)/i;
 
 function autoSplit(text, mode) {
   if (mode === "sentence") {
@@ -176,9 +177,13 @@ function autoSplit(text, mode) {
   parts.forEach(p => {
     p = p.trim();
     if (!p) return;
-    if (p.split(/\s+/).length > limit) {
-      p.split(CONJ).forEach(sub => { sub = sub.trim(); if (sub) out.push(sub); });
-    } else out.push(p);
+    let subs = p.split(/\s+/).length > limit ? p.split(CONJ) : [p];
+    if (mode === "fine") {
+      // 細かめ：長い節は前置詞の前でもさらに分割してできるだけ短く
+      subs = subs.flatMap(sub =>
+        sub.trim().split(/\s+/).length > limit ? sub.split(PREP) : [sub]);
+    }
+    subs.forEach(sub => { sub = sub.trim(); if (sub) out.push(sub); });
   });
   return out.length ? out : [text];
 }
