@@ -63,6 +63,8 @@
     <textarea id="ja" placeholder="例：きょうは友だちと公園でサッカーをしてあそんだよ"></textarea>
     <div class="row">
       <button class="primary" id="btnTr" onclick="doTranslate()">英語にする</button>
+      <button class="small tab" id="lang_en" onclick="setLang('en')">英語</button>
+      <button class="small tab" id="lang_zh" onclick="setLang('zh')">中国語</button>
       <select id="model"></select>
     </div>
     <div class="msg" id="msgTr"></div>
@@ -123,6 +125,18 @@
 let current = { japanese:"", english:"", marked:"", keywords:[], pageId:null };
 let failLabels = ["Fail"];
 let sentCache = {};
+let lang = localStorage.getItem("targetLang") || "en";
+
+function setLang(l) {
+  lang = l;
+  localStorage.setItem("targetLang", l);
+  document.getElementById("lang_en").classList.toggle("active", l === "en");
+  document.getElementById("lang_zh").classList.toggle("active", l === "zh");
+  document.getElementById("btnTr").textContent = l === "zh" ? "中国語にする" : "英語にする";
+  document.getElementById("resultCard").style.display = "none";  // 前の言語の結果をクリア
+  playerClose();
+  loadHistory();  // 履歴もその言語のものに切替
+}
 
 async function api(path, opts) {
   const r = await fetch(path, opts ? { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(opts) } : undefined);
@@ -139,7 +153,7 @@ function rateChanged(v) {
 function setRate(v) {
   document.getElementById("rate").value = v;
   rateChanged(v);
-  speak("This is the speaking speed.");  // その場で試聴
+  speak(lang === "zh" ? "这是朗读的速度。" : "This is the speaking speed.");  // その場で試聴
 }
 
 (function initRate() {
@@ -150,10 +164,11 @@ function setRate(v) {
 
 function makeUtter(text) {
   const u = new SpeechSynthesisUtterance(text);
-  u.lang = "en-US";
+  u.lang = lang === "zh" ? "zh-CN" : "en-US";
   u.rate = parseFloat(document.getElementById("rate").value);
-  const v = speechSynthesis.getVoices().filter(v => v.lang.startsWith("en"));
-  if (v.length) u.voice = v.find(x => x.name.includes("Samantha")) || v[0];
+  const pref = lang === "zh" ? "zh" : "en";
+  const v = speechSynthesis.getVoices().filter(v => v.lang.startsWith(pref));
+  if (v.length) u.voice = v.find(x => /Samantha|Ting|Tingting|Meijia/.test(x.name)) || v[0];
   return u;
 }
 
@@ -188,12 +203,19 @@ function autoSplit(text, mode) {
   return out.length ? out : [text];
 }
 
+function zhSplit(text, mode) {
+  // 中国語：句読点（，。！？、；：）で分割。文単位モードは 。！？ のみ
+  const re = mode === "sentence" ? /[^。！？]+[。！？]*/g : /[^，。！？、；：]+[，。！？、；：]*/g;
+  return (text.match(re) || [text]).map(s => s.trim()).filter(Boolean);
+}
+
 function splitPhrases(text, mode) {
   mode = mode || document.getElementById("splitMode").value;
   // 「/」「|」は自動区切りへの追加の強制区切り（置き換えではない）
   const segments = text.split(/[/|｜／]+/).map(s => s.trim()).filter(Boolean);
   const out = [];
-  (segments.length ? segments : [text]).forEach(seg => out.push(...autoSplit(seg, mode)));
+  const auto = lang === "zh" ? zhSplit : autoSplit;
+  (segments.length ? segments : [text]).forEach(seg => out.push(...auto(seg, mode)));
   return out.length ? out : [text];
 }
 
@@ -363,7 +385,7 @@ async function doTranslate() {
   btn.disabled = true; msg("msgTr", "翻訳中…（ローカルLLM）", true);
   try {
     const model = document.getElementById("model").value;
-    const d = await api("/api/translate", { japanese: ja, model });
+    const d = await api("/api/translate", { japanese: ja, model, lang });
     current = { japanese: ja, english: d.english, marked: d.english, keywords: [], pageId: null };
     document.getElementById("resultCard").style.display = "";
     document.getElementById("english").textContent = d.english;
@@ -372,7 +394,7 @@ async function doTranslate() {
     msg("msgTr", "", true); msg("msgSave", "", true);
     document.getElementById("btnSave").disabled = false;
     playerLoad(d.english);  // 英文が出た時点ですぐ節分解して発音（キーワードは裏で取得）
-    api("/api/keywords", { english: d.english, japanese: ja, model }).then(k => {
+    api("/api/keywords", { english: d.english, japanese: ja, model, lang }).then(k => {
       if (current.english !== d.english) return;
       current.keywords = k.keywords || [];
       renderKeywords();
@@ -399,7 +421,7 @@ async function saveSentence() {
   const btn = document.getElementById("btnSave");
   btn.disabled = true; msg("msgSave", "保存中…", true);
   try {
-    const payload = { japanese: current.japanese, english: current.english, marked: current.marked };
+    const payload = { japanese: current.japanese, english: current.english, marked: current.marked, lang };
     if (current.pageId) payload.id = current.pageId;  // 呼び出した英文は同じIDに上書き
     const d = await api("/api/sentences", payload);
     current.pageId = d.id;
@@ -416,7 +438,7 @@ async function saveWords() {
   try {
     for (const k of picked) {
       await api("/api/words", { word: k.word, meaning: k.meaning,
-        example: current.english, source_id: current.pageId });
+        example: current.english, source_id: current.pageId, lang });
     }
     msg("msgSave", `${picked.length}語を単語帳に登録しました`, true);
     loadHistory();
@@ -442,7 +464,7 @@ async function study(id) {
   window.scrollTo({ top: 0, behavior: "smooth" });
   playerLoad(current.marked);
   api("/api/practice", { id }).then(loadHistory).catch(() => {});  // 実施を自動記録
-  api("/api/keywords", { english: s.english, japanese: s.japanese, model: document.getElementById("model").value })
+  api("/api/keywords", { english: s.english, japanese: s.japanese, model: document.getElementById("model").value, lang })
     .then(k => { current.keywords = k.keywords || []; renderKeywords(); })
     .catch(() => { document.getElementById("kwBox").innerHTML = ""; });
 }
@@ -474,7 +496,7 @@ let allS = [], allW = [], histTab = "date";
 
 async function loadHistory() {
   try {
-    [allS, allW] = await Promise.all([api("/api/sentences"), api("/api/words")]);
+    [allS, allW] = await Promise.all([api("/api/sentences?lang=" + lang), api("/api/words?lang=" + lang)]);
     sentCache = {};
     allS.forEach(s => sentCache[s.id] = s);
     renderHistory();
@@ -562,7 +584,8 @@ async function recFail(btn, id, label) {
 }
 
 speechSynthesis.getVoices();
-health(); loadHistory();  // 履歴データは裏で先読み（表示はメイン画面から）
+setLang(lang);  // 言語ボタンの初期状態（loadHistoryも実行される）
+health();
 </script>
 </body>
 </html>

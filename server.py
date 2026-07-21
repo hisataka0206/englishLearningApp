@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.13.3"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.14.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -57,7 +57,20 @@ def make_drive():
 
 
 DRIVE = make_drive()
-DATA_FILES = ["sentences.json", "words.json", "sentences.md", "words.md"]
+DATA_FILES = ["sentences.json", "words.json", "sentences.md", "words.md",
+              "sentences_zh.json", "words_zh.json", "sentences_zh.md", "words_zh.md"]
+
+
+def sname(lang):
+    return "sentences_zh.json" if lang == "zh" else "sentences.json"
+
+
+def wname(lang):
+    return "words_zh.json" if lang == "zh" else "words.json"
+
+
+SENT_FILES = ["sentences.json", "sentences_zh.json"]
+WORD_FILES = ["words.json", "words_zh.json"]
 
 
 # ---------------------------------------------------------------- storage
@@ -140,35 +153,37 @@ def now():
 
 def regen_markdown():
     """Human-readable views for browsing in the Drive app."""
-    sentences = _load("sentences.json")
-    words = _load("words.json")
+    for lang, label in (("en", "English"), ("zh", "Chinese")):
+        suffix = "_zh" if lang == "zh" else ""
+        sentences = _load(sname(lang))
+        words = _load(wname(lang))
 
-    lines = ["# English Sentences", ""]
-    for s in reversed(sentences):
-        lines.append(f"## {s['english']}")
-        lines.append(f"- 日本語: {s['japanese']}")
-        practices = s.get("practices", [])
-        last = practices[-1] if practices else "未実施"
-        lines.append(f"- 登録日: {s['created']}  /  実施: {len(practices)}回（最終: {last}）  /  fail: {len(s.get('fails', []))}")
-        for fl in s.get("fails", []):
-            lines.append(f"  - ❌ {fl['label']} ({fl['time']})")
-        if practices:
-            lines.append(f"  - 🗣 実施日: {', '.join(p[:10] for p in practices)}")
-        if s.get("memo"):
-            lines.append(f"- メモ: {s['memo']}")
-        lines.append("")
-    with open(_file("sentences.md"), "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+        lines = [f"# {label} Sentences", ""]
+        for s in reversed(sentences):
+            lines.append(f"## {s['english']}")
+            lines.append(f"- 日本語: {s['japanese']}")
+            practices = s.get("practices", [])
+            last = practices[-1] if practices else "未実施"
+            lines.append(f"- 登録日: {s['created']}  /  実施: {len(practices)}回（最終: {last}）  /  fail: {len(s.get('fails', []))}")
+            for fl in s.get("fails", []):
+                lines.append(f"  - ❌ {fl['label']} ({fl['time']})")
+            if practices:
+                lines.append(f"  - 🗣 実施日: {', '.join(p[:10] for p in practices)}")
+            if s.get("memo"):
+                lines.append(f"- メモ: {s['memo']}")
+            lines.append("")
+        with open(_file(f"sentences{suffix}.md"), "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
 
-    by_id = {s["id"]: s for s in sentences}
-    lines = ["# English Words", "", "| Word | 意味 | 例文 | 登録日 |",
-             "|---|---|---|---|"]
-    for w in reversed(words):
-        src = by_id.get(w.get("source_id"), {})
-        example = w.get("example") or src.get("english", "")
-        lines.append(f"| **{w['word']}** | {w.get('meaning','')} | {example} | {w['created']} |")
-    with open(_file("words.md"), "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+        by_id = {s["id"]: s for s in sentences}
+        lines = [f"# {label} Words", "", "| Word | 意味 | 例文 | 登録日 |",
+                 "|---|---|---|---|"]
+        for w in reversed(words):
+            src = by_id.get(w.get("source_id"), {})
+            example = w.get("example") or src.get("english", "")
+            lines.append(f"| **{w['word']}** | {w.get('meaning','')} | {example} | {w['created']} |")
+        with open(_file(f"words{suffix}.md"), "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
     drive_push_async()  # 変更のたびにDriveフォルダへAPIで反映
 
 
@@ -176,7 +191,7 @@ def migrate_ids():
     """既存データにIDが無いレコードがあれば固有IDを付与する。"""
     with LOCK:
         changed = False
-        for name in ("sentences.json", "words.json"):
+        for name in SENT_FILES + WORD_FILES:
             items = _load(name)
             fixed = False
             for it in items:
@@ -192,36 +207,37 @@ def migrate_ids():
 
 
 def update_sentence(sentence_id, japanese, english, memo="", marked=""):
-    """既存の英文を上書き（実施履歴・fail履歴・登録日は保持）。"""
+    """既存の文を上書き（実施履歴・fail履歴・登録日は保持）。IDで両言語から検索。"""
     with LOCK:
-        items = _load("sentences.json")
-        for s in items:
-            if s["id"] == sentence_id:
-                s["japanese"] = japanese or s.get("japanese", "")
-                s["english"] = english
-                s["marked"] = marked or english
-                if memo:
-                    s["memo"] = memo
-                _save("sentences.json", items)
-                regen_markdown()
-                return {"id": sentence_id, "updated": True}, None
+        for fname in SENT_FILES:
+            items = _load(fname)
+            for s in items:
+                if s["id"] == sentence_id:
+                    s["japanese"] = japanese or s.get("japanese", "")
+                    s["english"] = english
+                    s["marked"] = marked or english
+                    if memo:
+                        s["memo"] = memo
+                    _save(fname, items)
+                    regen_markdown()
+                    return {"id": sentence_id, "updated": True}, None
     return None, "sentence not found"
 
 
-def save_sentence(japanese, english, memo="", marked=""):
+def save_sentence(japanese, english, memo="", marked="", lang="en"):
     with LOCK:
-        items = _load("sentences.json")
+        items = _load(sname(lang))
         rec = {"id": uuid.uuid4().hex, "japanese": japanese, "english": english,
                "marked": marked or english,  # 「/」区切り位置付きの原文
                "memo": memo, "created": now(), "fails": []}
         items.append(rec)
-        _save("sentences.json", items)
+        _save(sname(lang), items)
         regen_markdown()
     return {"id": rec["id"]}, None
 
 
-def list_sentences(limit=200):
-    items = _load("sentences.json")
+def list_sentences(limit=200, lang="en"):
+    items = _load(sname(lang))
     out = []
     for s in reversed(items[-200:]):
         practices = s.get("practices", [])
@@ -237,31 +253,33 @@ def list_sentences(limit=200):
 def record_practice(sentence_id):
     """Auto-log the date/time a sentence was practiced (spoken)."""
     with LOCK:
-        items = _load("sentences.json")
-        for s in items:
-            if s["id"] == sentence_id:
-                s.setdefault("practices", []).append(now())
-                _save("sentences.json", items)
-                regen_markdown()
-                return {"practice_count": len(s["practices"]),
-                        "last_practiced": s["practices"][-1][:10]}, None
+        for fname in SENT_FILES:
+            items = _load(fname)
+            for s in items:
+                if s["id"] == sentence_id:
+                    s.setdefault("practices", []).append(now())
+                    _save(fname, items)
+                    regen_markdown()
+                    return {"practice_count": len(s["practices"]),
+                            "last_practiced": s["practices"][-1][:10]}, None
     return None, "sentence not found"
 
 
 def delete_sentence(sentence_id):
     with LOCK:
-        items = _load("sentences.json")
-        remaining = [s for s in items if s["id"] != sentence_id]
-        if len(remaining) == len(items):
-            return None, "sentence not found"
-        _save("sentences.json", remaining)
-        regen_markdown()
-    return {"deleted": sentence_id}, None
+        for fname in SENT_FILES:
+            items = _load(fname)
+            remaining = [s for s in items if s["id"] != sentence_id]
+            if len(remaining) != len(items):
+                _save(fname, remaining)
+                regen_markdown()
+                return {"deleted": sentence_id}, None
+    return None, "sentence not found"
 
 
-def list_words(limit=500):
-    words = _load("words.json")
-    sentences = {s["id"]: s for s in _load("sentences.json")}
+def list_words(limit=500, lang="en"):
+    words = _load(wname(lang))
+    sentences = {s["id"]: s for s in _load(sname(lang))}
     out = []
     for w in reversed(words[-500:]):
         src = sentences.get(w.get("source_id"), {})
@@ -273,22 +291,23 @@ def list_words(limit=500):
 
 def delete_word(word_id):
     with LOCK:
-        items = _load("words.json")
-        remaining = [w for w in items if w["id"] != word_id]
-        if len(remaining) == len(items):
-            return None, "word not found"
-        _save("words.json", remaining)
-        regen_markdown()
-    return {"deleted": word_id}, None
+        for fname in WORD_FILES:
+            items = _load(fname)
+            remaining = [w for w in items if w["id"] != word_id]
+            if len(remaining) != len(items):
+                _save(fname, remaining)
+                regen_markdown()
+                return {"deleted": word_id}, None
+    return None, "word not found"
 
 
-def save_word(word, meaning, example="", source_id=None):
+def save_word(word, meaning, example="", source_id=None, lang="en"):
     with LOCK:
-        items = _load("words.json")
+        items = _load(wname(lang))
         rec = {"id": uuid.uuid4().hex, "word": word, "meaning": meaning,
                "example": example, "source_id": source_id, "created": now()}
         items.append(rec)
-        _save("words.json", items)
+        _save(wname(lang), items)
         regen_markdown()
     return {"id": rec["id"]}, None
 
@@ -323,22 +342,41 @@ def http_json(url, payload=None, timeout=120):
         return None, str(e)
 
 
-TRANSLATE_PROMPT = """Translate the Japanese text into natural, conversational English.
+TRANSLATE_PROMPTS = {
+    "en": """Translate the Japanese text into natural, conversational English.
 The learner is an elementary-school child, so use simple, friendly words
 that a kid would actually say. Keep it short and natural.
 Output ONLY the English translation. No explanations, no quotes.
 
 Japanese text:
-"""
+""",
+    "zh": """Translate the Japanese text into natural, conversational Chinese
+(Simplified characters). The learner is an elementary-school child, so use
+simple, friendly words that a kid would actually say. Keep it short and natural.
+Output ONLY the Chinese translation. No explanations, no quotes, no pinyin.
 
-KEYWORDS_PROMPT = """From the English sentence below, pick up to 3 keywords/phrases
+Japanese text:
+""",
+}
+
+KEYWORDS_PROMPTS = {
+    "en": """From the English sentence below, pick up to 3 keywords/phrases
 worth memorizing for a Japanese learner.
 Rules:
 - "word" MUST be English, copied exactly from the English sentence.
 - "meaning" MUST be Japanese, copied from the original Japanese text below
   (the expression that corresponds to the word). Do NOT invent a new translation.
 Respond ONLY with JSON: {"keywords": [{"word": "...", "meaning": "..."}]}
-"""
+""",
+    "zh": """From the Chinese sentence below, pick up to 3 keywords/phrases
+worth memorizing for a Japanese learner.
+Rules:
+- "word" MUST be Chinese, copied exactly from the Chinese sentence.
+- "meaning" MUST be Japanese, copied from the original Japanese text below
+  (the expression that corresponds to the word). Do NOT invent a new translation.
+Respond ONLY with JSON: {"keywords": [{"word": "...", "meaning": "..."}]}
+""",
+}
 
 
 def chat(prompt, model=None, json_mode=False, num_predict=None, think=None):
@@ -369,15 +407,20 @@ def _has_japanese(s):
     return bool(re.search(r"[぀-ヿ㐀-鿿]", s or ""))
 
 
+def _has_kana(s):
+    """ひらがな・カタカナを含むか（中国語モードでの日本語判定用。漢字は除外）"""
+    return bool(re.search(r"[぀-ゟ゠-ヿ]", s or ""))
+
+
 def _clean(text):
     """Strip <think> blocks (reasoning models) and surrounding quotes."""
     text = re.sub(r"<think>.*?(</think>|$)", "", text or "", flags=re.S)
     return text.strip().strip('"').strip()
 
 
-def translate(japanese, model=None):
+def translate(japanese, model=None, lang="en"):
     """Fast path: translation only (short plain-text output)."""
-    prompt = TRANSLATE_PROMPT + japanese
+    prompt = TRANSLATE_PROMPTS.get(lang, TRANSLATE_PROMPTS["en"]) + japanese
     content, err = chat(prompt, model, num_predict=512)
     if err:
         return None, err
@@ -392,17 +435,18 @@ def translate(japanese, model=None):
             english = _clean(content)
     if not english:
         used = model or CFG["ollama"]["model"]
-        return None, (f"モデル '{used}' から英文が得られませんでした。"
+        return None, (f"モデル '{used}' から訳文が得られませんでした。"
                       "思考型モデル（qwen3, deepseek-r1等）の場合は "
                       "qwen2.5:1.5b など通常モデルに切り替えてください "
                       "（詳細は logs/server.log）")
     return {"english": english}, None
 
 
-def extract_keywords(english, japanese="", model=None):
+def extract_keywords(english, japanese="", model=None, lang="en"):
     """Slow path: fetched by the UI in the background after translation."""
-    prompt = (KEYWORDS_PROMPT
-              + f"\nEnglish sentence:\n{english}\n"
+    label = "Chinese" if lang == "zh" else "English"
+    prompt = (KEYWORDS_PROMPTS.get(lang, KEYWORDS_PROMPTS["en"])
+              + f"\n{label} sentence:\n{english}\n"
               + f"\nOriginal Japanese text:\n{japanese}\n")
     content, err = chat(prompt, model, json_mode=True,
                         num_predict=400)
@@ -422,11 +466,12 @@ def extract_keywords(english, japanese="", model=None):
             continue
         w = str(k.get("word", "")).strip()
         m = str(k.get("meaning", "")).strip()
-        # LLMがword/meaningを取り違えた場合の補正：英語⇔日本語が逆なら入れ替え
-        if _has_japanese(w) and not _has_japanese(m):
+        # LLMがword/meaningを取り違えた場合の補正（逆なら入れ替え、不正なら除外）
+        bad = _has_kana if lang == "zh" else _has_japanese  # zhは漢字OK・かなNG
+        if bad(w) and not bad(m):
             w, m = m, w
-        if _has_japanese(w) or not w:
-            continue  # wordが英語でないものは除外
+        if bad(w) or not w:
+            continue
         keywords.append({"word": w, "meaning": m})
     return {"keywords": keywords[:3]}, None
 
@@ -455,6 +500,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(data)
+
+    def _lang(self):
+        from urllib.parse import urlparse, parse_qs
+        q = parse_qs(urlparse(self.path).query)
+        return (q.get("lang") or ["en"])[0]
 
     def _json_body(self):
         length = int(self.headers.get("Content-Length") or 0)
@@ -506,10 +556,10 @@ class Handler(BaseHTTPRequestHandler):
                       "drive_ready": drive_ready, "drive_error": drive_err,
                       "fail_labels": CFG.get("fail_labels", ["Fail"])})
         elif self.path.startswith("/api/sentences"):
-            data, err = list_sentences()
+            data, err = list_sentences(lang=self._lang())
             self._ok(data) if not err else self._fail(err)
         elif self.path.startswith("/api/words"):
-            data, err = list_words()
+            data, err = list_words(lang=self._lang())
             self._ok(data) if not err else self._fail(err)
         else:
             self._send(404, {"ok": False, "error": "not found"})
@@ -520,17 +570,18 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             return self._fail(f"bad json: {e}", 400)
 
+        lang = body.get("lang", "en") if isinstance(body, dict) else "en"
         if self.path == "/api/translate":
             japanese = (body.get("japanese") or "").strip()
             if not japanese:
                 return self._fail("japanese is required", 400)
-            data, err = translate(japanese, body.get("model"))
+            data, err = translate(japanese, body.get("model"), lang)
         elif self.path == "/api/keywords":
             english = (body.get("english") or "").strip()
             if not english:
                 return self._fail("english is required", 400)
             data, err = extract_keywords(english, body.get("japanese", ""),
-                                         body.get("model"))
+                                         body.get("model"), lang)
         elif self.path == "/api/sentences":
             if not body.get("english"):
                 return self._fail("english is required", 400)
@@ -540,7 +591,8 @@ class Handler(BaseHTTPRequestHandler):
                                             body.get("marked", ""))
             else:
                 data, err = save_sentence(body.get("japanese", ""), body["english"],
-                                          body.get("memo", ""), body.get("marked", ""))
+                                          body.get("memo", ""), body.get("marked", ""),
+                                          lang)
         elif self.path == "/api/words/delete":
             if not body.get("id"):
                 return self._fail("id is required", 400)
@@ -549,7 +601,8 @@ class Handler(BaseHTTPRequestHandler):
             if not body.get("word"):
                 return self._fail("word is required", 400)
             data, err = save_word(body["word"], body.get("meaning", ""),
-                                  body.get("example", ""), body.get("source_id"))
+                                  body.get("example", ""), body.get("source_id"),
+                                  lang)
         elif self.path == "/api/fail":
             if not body.get("id"):
                 return self._fail("id is required", 400)
