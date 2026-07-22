@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.15.1"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.15.2"  # 機能変更時にここを更新（画面右上に表示される）
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -114,7 +114,7 @@ def drive_pull_initial():
     """On startup, fetch data files from Drive if we have no local copy."""
     if not (DRIVE and DRIVE.configured()):
         return
-    for name in ("sentences.json", "words.json"):
+    for name in SENT_FILES + WORD_FILES:  # 英語・中国語の両方を取り込む
         p = _file(name)
         if os.path.exists(p):
             continue
