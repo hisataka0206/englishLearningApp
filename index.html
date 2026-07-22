@@ -73,7 +73,7 @@
   </div>
 
   <div class="card" id="resultCard" style="display:none">
-    <h2>英訳（タップで編集可。「/」を入れるとその位置で発音を区切ります）</h2>
+    <h2 id="transHead">英訳（タップで編集可。「/」を入れるとその位置で発音を区切ります）</h2>
     <div id="english" contenteditable="true" oninput="englishEdited(this)"></div>
     <div id="pinyin" style="color:var(--muted);font-size:13px;margin-top:2px"></div>
     <div class="row">
@@ -130,12 +130,41 @@ let failLabels = ["Fail"];
 let sentCache = {};
 let lang = localStorage.getItem("targetLang") || "en";
 
+// ===== 言語ごとのUIラベルを一元管理（新言語追加時はここに1ブロック足すだけ） =====
+const LABELS = {
+  en: {
+    name: "英語", toBtn: "英語にする",
+    transHead: "英訳（タップで編集可。「/」を入れるとその位置で発音を区切ります）",
+    sentTab: "英文のみ", sentCol: "英文 / 日本語", unit: "英文",
+    delConfirm: "この英文を削除しますか？",
+    restudy: "保存済みの英文を再学習中（区切りを編集して保存すると上書きされます）",
+    slashHint: "区切りたい位置を英文内でタップしてから押してください",
+    sample: "This is the speaking speed.",
+    ttsLang: "en-US", voicePref: "en", voiceRe: /Samantha/,
+  },
+  zh: {
+    name: "中国語", toBtn: "中国語にする",
+    transHead: "中国語訳（タップで編集可。「/」を入れるとその位置で発音を区切ります）",
+    sentTab: "中国語のみ", sentCol: "中国語 / 日本語", unit: "文",
+    delConfirm: "この文を削除しますか？",
+    restudy: "保存済みの文を再学習中（区切りを編集して保存すると上書きされます）",
+    slashHint: "区切りたい位置を文中でタップしてから押してください",
+    sample: "这是朗读的速度。",
+    ttsLang: "zh-CN", voicePref: "zh", voiceRe: /Ting|Tingting|Meijia|Sinji/,
+  },
+};
+
+function L() { return LABELS[lang] || LABELS.en; }
+
 function setLang(l) {
-  lang = l;
-  localStorage.setItem("targetLang", l);
-  document.getElementById("lang_en").classList.toggle("active", l === "en");
-  document.getElementById("lang_zh").classList.toggle("active", l === "zh");
-  document.getElementById("btnTr").textContent = l === "zh" ? "中国語にする" : "英語にする";
+  lang = LABELS[l] ? l : "en";
+  localStorage.setItem("targetLang", lang);
+  document.getElementById("lang_en").classList.toggle("active", lang === "en");
+  document.getElementById("lang_zh").classList.toggle("active", lang === "zh");
+  // 静的なUI文言を一括で切替
+  document.getElementById("btnTr").textContent = L().toBtn;
+  document.getElementById("transHead").textContent = L().transHead;
+  document.getElementById("tab_sent").textContent = L().sentTab;
   document.getElementById("resultCard").style.display = "none";  // 前の言語の結果をクリア
   playerClose();
   loadHistory();  // 履歴もその言語のものに切替
@@ -156,7 +185,7 @@ function rateChanged(v) {
 function setRate(v) {
   document.getElementById("rate").value = v;
   rateChanged(v);
-  speak(lang === "zh" ? "这是朗读的速度。" : "This is the speaking speed.");  // その場で試聴
+  speak(L().sample);  // その場で試聴
 }
 
 (function initRate() {
@@ -167,11 +196,10 @@ function setRate(v) {
 
 function makeUtter(text) {
   const u = new SpeechSynthesisUtterance(text);
-  u.lang = lang === "zh" ? "zh-CN" : "en-US";
+  u.lang = L().ttsLang;
   u.rate = parseFloat(document.getElementById("rate").value);
-  const pref = lang === "zh" ? "zh" : "en";
-  const v = speechSynthesis.getVoices().filter(v => v.lang.startsWith(pref));
-  if (v.length) u.voice = v.find(x => /Samantha|Ting|Tingting|Meijia/.test(x.name)) || v[0];
+  const v = speechSynthesis.getVoices().filter(v => v.lang.startsWith(L().voicePref));
+  if (v.length) u.voice = v.find(x => L().voiceRe.test(x.name)) || v[0];
   return u;
 }
 
@@ -235,7 +263,7 @@ document.addEventListener("selectionchange", () => {
 function insertSlash() {
   const en = document.getElementById("english");
   if (!savedRange || !en.contains(savedRange.startContainer)) {
-    msg("msgSave", "区切りたい位置を英文内でタップしてから押してください", false);
+    msg("msgSave", L().slashHint, false);
     return;
   }
   savedRange.deleteContents();
@@ -492,7 +520,7 @@ async function study(id) {
   document.getElementById("english").textContent = current.marked;
   document.getElementById("pinyin").textContent = s.pinyin || "";
   document.getElementById("btnSave").disabled = true;
-  msg("msgSave", "保存済みの英文を再学習中（区切りを編集して保存すると上書きされます）", true);
+  msg("msgSave", L().restudy, true);
   document.getElementById("kwBox").innerHTML =
     "<span style='color:var(--muted);font-size:13px'>キーワード抽出中…</span>";
   document.getElementById("kwActions").style.display = "none";
@@ -505,7 +533,7 @@ async function study(id) {
 }
 
 async function delSentence(id) {
-  if (!confirm("この英文を削除しますか？")) return;
+  if (!confirm(L().delConfirm)) return;
   try {
     await api("/api/delete", { id });
     loadHistory();
@@ -549,7 +577,7 @@ function esc(s) { return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
 function sentTable(list, withDate) {
   if (!list.length) return "";
-  let h = `<table class="htable"><tr>${withDate ? "<th>日付</th>" : ""}<th>英文 / 日本語</th><th>実施</th><th>fail</th><th>操作</th></tr>`;
+  let h = `<table class="htable"><tr>${withDate ? "<th>日付</th>" : ""}<th>${L().sentCol}</th><th>実施</th><th>fail</th><th>操作</th></tr>`;
   list.forEach(s => {
     const fails = failLabels.map(l =>
       `<button class="small ghost" onclick="recFail(this,'${s.id}','${l}')">${l}</button>`).join("");
@@ -592,7 +620,7 @@ function renderHistory() {
     dates.forEach(d => {
       const ds = fs.filter(s => s.created === d), dw = fw.filter(w => w.created === d);
       h += `<div class="dateh">${d}</div>`;
-      if (ds.length) h += `<div class="seclabel">英文 ${ds.length}件</div>` + sentTable(ds, false);
+      if (ds.length) h += `<div class="seclabel">${L().unit} ${ds.length}件</div>` + sentTable(ds, false);
       if (dw.length) h += `<div class="seclabel">単語 ${dw.length}語</div>` + wordTable(dw, false);
     });
     h = h || "該当なし";
