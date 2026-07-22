@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.14.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.15.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -161,6 +161,8 @@ def regen_markdown():
         lines = [f"# {label} Sentences", ""]
         for s in reversed(sentences):
             lines.append(f"## {s['english']}")
+            if s.get("pinyin"):
+                lines.append(f"- 拼音: {s['pinyin']}")
             lines.append(f"- 日本語: {s['japanese']}")
             practices = s.get("practices", [])
             last = practices[-1] if practices else "未実施"
@@ -181,7 +183,8 @@ def regen_markdown():
         for w in reversed(words):
             src = by_id.get(w.get("source_id"), {})
             example = w.get("example") or src.get("english", "")
-            lines.append(f"| **{w['word']}** | {w.get('meaning','')} | {example} | {w['created']} |")
+            wcell = f"**{w['word']}**" + (f" ({w['pinyin']})" if w.get("pinyin") else "")
+            lines.append(f"| {wcell} | {w.get('meaning','')} | {example} | {w['created']} |")
         with open(_file(f"words{suffix}.md"), "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
     drive_push_async()  # 変更のたびにDriveフォルダへAPIで反映
@@ -218,6 +221,8 @@ def update_sentence(sentence_id, japanese, english, memo="", marked=""):
                     s["marked"] = marked or english
                     if memo:
                         s["memo"] = memo
+                    if fname == "sentences_zh.json":
+                        s["pinyin"] = to_pinyin(english)
                     _save(fname, items)
                     regen_markdown()
                     return {"id": sentence_id, "updated": True}, None
@@ -230,6 +235,8 @@ def save_sentence(japanese, english, memo="", marked="", lang="en"):
         rec = {"id": uuid.uuid4().hex, "japanese": japanese, "english": english,
                "marked": marked or english,  # 「/」区切り位置付きの原文
                "memo": memo, "created": now(), "fails": []}
+        if lang == "zh":
+            rec["pinyin"] = to_pinyin(english)
         items.append(rec)
         _save(sname(lang), items)
         regen_markdown()
@@ -243,6 +250,7 @@ def list_sentences(limit=200, lang="en"):
         practices = s.get("practices", [])
         out.append({"id": s["id"], "english": s["english"], "japanese": s["japanese"],
                     "marked": s.get("marked") or s["english"],
+                    "pinyin": s.get("pinyin", ""),
                     "created": s.get("created", "")[:10],
                     "fail_count": len(s.get("fails", [])),
                     "practice_count": len(practices),
@@ -285,6 +293,7 @@ def list_words(limit=500, lang="en"):
         src = sentences.get(w.get("source_id"), {})
         out.append({"id": w["id"], "word": w["word"], "meaning": w.get("meaning", ""),
                     "example": w.get("example") or src.get("english", ""),
+                    "pinyin": w.get("pinyin", ""),
                     "created": w.get("created", "")[:10]})
     return out[:limit], None
 
@@ -306,6 +315,8 @@ def save_word(word, meaning, example="", source_id=None, lang="en"):
         items = _load(wname(lang))
         rec = {"id": uuid.uuid4().hex, "word": word, "meaning": meaning,
                "example": example, "source_id": source_id, "created": now()}
+        if lang == "zh":
+            rec["pinyin"] = to_pinyin(word)
         items.append(rec)
         _save(wname(lang), items)
         regen_markdown()
@@ -403,6 +414,43 @@ def chat(prompt, model=None, json_mode=False, num_predict=None, think=None):
     return msg.get("content", ""), None
 
 
+# ---------------------------------------------------------------- pinyin
+_pypinyin_tried = False
+
+
+def _ensure_pypinyin():
+    global _pypinyin_tried
+    try:
+        import pypinyin  # noqa: F401
+        return True
+    except ImportError:
+        if _pypinyin_tried:
+            return False
+        _pypinyin_tried = True
+        import subprocess
+        import sys
+        for args in (["-m", "pip", "install", "--user", "pypinyin"],
+                     ["-m", "pip", "install", "--break-system-packages", "pypinyin"]):
+            try:
+                subprocess.run([sys.executable] + args, capture_output=True, timeout=180)
+                import importlib
+                importlib.invalidate_caches()
+                import pypinyin  # noqa: F401
+                print("[pinyin] pypinyin installed")
+                return True
+            except Exception:
+                continue
+        print("[pinyin] pypinyin unavailable (pip install pypinyin を手動実行してください)")
+        return False
+
+
+def to_pinyin(text):
+    if not text or not _ensure_pypinyin():
+        return ""
+    from pypinyin import lazy_pinyin, Style
+    return " ".join(lazy_pinyin(text, style=Style.TONE))
+
+
 def _has_japanese(s):
     return bool(re.search(r"[぀-ヿ㐀-鿿]", s or ""))
 
@@ -439,7 +487,10 @@ def translate(japanese, model=None, lang="en"):
                       "思考型モデル（qwen3, deepseek-r1等）の場合は "
                       "qwen2.5:1.5b など通常モデルに切り替えてください "
                       "（詳細は logs/server.log）")
-    return {"english": english}, None
+    result = {"english": english}
+    if lang == "zh":
+        result["pinyin"] = to_pinyin(english)
+    return result, None
 
 
 def extract_keywords(english, japanese="", model=None, lang="en"):
@@ -472,7 +523,10 @@ def extract_keywords(english, japanese="", model=None, lang="en"):
             w, m = m, w
         if bad(w) or not w:
             continue
-        keywords.append({"word": w, "meaning": m})
+        rec = {"word": w, "meaning": m}
+        if lang == "zh":
+            rec["pinyin"] = to_pinyin(w)
+        keywords.append(rec)
     return {"keywords": keywords[:3]}, None
 
 
@@ -576,6 +630,9 @@ class Handler(BaseHTTPRequestHandler):
             if not japanese:
                 return self._fail("japanese is required", 400)
             data, err = translate(japanese, body.get("model"), lang)
+        elif self.path == "/api/pinyin":
+            texts = body.get("texts") or []
+            data, err = {"pinyins": [to_pinyin(t) for t in texts]}, None
         elif self.path == "/api/keywords":
             english = (body.get("english") or "").strip()
             if not english:

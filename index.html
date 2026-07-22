@@ -43,9 +43,10 @@
     box-shadow:0 -2px 10px rgba(0,0,0,.12); padding:10px 12px 14px; display:none; z-index:10; }
   #player .inner { max-width:640px; margin:0 auto; }
   #phrases { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
-  .chip { background:#eef1f8; border-radius:16px; padding:6px 12px; font-size:14px; cursor:pointer; }
+  .chip { background:#eef1f8; border-radius:16px; padding:6px 12px; font-size:14px; cursor:pointer; text-align:center; }
   .chip.active { background:var(--accent); color:#fff; }
   .chip.done { background:#d7e3ff; }
+  .chip .cpy { font-size:10px; opacity:.7; }
 </style>
 </head>
 <body>
@@ -73,6 +74,7 @@
   <div class="card" id="resultCard" style="display:none">
     <h2>英訳（タップで編集可。「/」を入れるとその位置で発音を区切ります）</h2>
     <div id="english" contenteditable="true" oninput="englishEdited(this)"></div>
+    <div id="pinyin" style="color:var(--muted);font-size:13px;margin-top:2px"></div>
     <div class="row">
       <button class="ghost" onclick="playerLoad(document.getElementById('english').textContent)">🔊 発音</button>
       <button class="ghost" onmousedown="event.preventDefault()" ontouchend="event.preventDefault();insertSlash()" onclick="insertSlash()">／ 区切り挿入</button>
@@ -260,6 +262,14 @@ function playerSetText(text) {
     c.onclick = () => playerPlayOne(i);  // タップした節だけを発音
     box.appendChild(c);
   });
+  if (lang === "zh") {  // 各節に拼音を付記
+    api("/api/pinyin", { texts: player.phrases }).then(d => {
+      if (player.text !== text) return;
+      box.querySelectorAll(".chip").forEach((c, i) => {
+        if (d.pinyins[i]) c.innerHTML = `${esc(player.phrases[i])}<div class="cpy">${d.pinyins[i]}</div>`;
+      });
+    }).catch(() => {});
+  }
   document.getElementById("player").style.display = "block";
   document.body.style.paddingBottom = "190px";
 }
@@ -285,6 +295,20 @@ function englishEdited(el) {
   current.english = current.marked.replace(/\s*[/|｜／]+\s*/g, " ").replace(/\s+/g, " ").trim();
   document.getElementById("btnSave").disabled = false;  // 編集したら保存可能に（呼び出し中は上書き）
   playerSync();  // 区切りの変更を練習ウィンドウに即反映
+  refreshPinyin();
+}
+
+let pinyinTimer = null;
+function refreshPinyin() {
+  if (lang !== "zh") return;
+  clearTimeout(pinyinTimer);
+  pinyinTimer = setTimeout(() => {
+    const text = current.english;
+    api("/api/pinyin", { texts: [text] }).then(d => {
+      if (current.english === text)
+        document.getElementById("pinyin").textContent = d.pinyins[0] || "";
+    }).catch(() => {});
+  }, 400);
 }
 
 function playerSync() {
@@ -389,6 +413,7 @@ async function doTranslate() {
     current = { japanese: ja, english: d.english, marked: d.english, keywords: [], pageId: null };
     document.getElementById("resultCard").style.display = "";
     document.getElementById("english").textContent = d.english;
+    document.getElementById("pinyin").textContent = d.pinyin || "";
     document.getElementById("kwBox").innerHTML = "<span style='color:var(--muted);font-size:13px'>キーワード抽出中…</span>";
     document.getElementById("kwActions").style.display = "none";
     msg("msgTr", "", true); msg("msgSave", "", true);
@@ -411,7 +436,7 @@ function renderKeywords() {
     const d = document.createElement("div");
     d.className = "kw";
     d.innerHTML = `<input type="checkbox" id="kw${i}" checked>
-      <label for="kw${i}"><b>${k.word}</b> <span class="m">${k.meaning}</span></label>
+      <label for="kw${i}"><b>${k.word}</b> <span class="m">${k.pinyin ? k.pinyin + " / " : ""}${k.meaning}</span></label>
       <button class="small ghost" onclick="speak('${k.word.replace(/'/g,"\\'")}')">🔊</button>`;
     box.appendChild(d);
   });
@@ -456,6 +481,7 @@ async function study(id) {
               marked: s.marked || s.english, keywords: [], pageId: id };
   document.getElementById("resultCard").style.display = "";
   document.getElementById("english").textContent = current.marked;
+  document.getElementById("pinyin").textContent = s.pinyin || "";
   document.getElementById("btnSave").disabled = true;
   msg("msgSave", "保存済みの英文を再学習中（区切りを編集して保存すると上書きされます）", true);
   document.getElementById("kwBox").innerHTML =
@@ -519,7 +545,7 @@ function sentTable(list, withDate) {
     const fails = failLabels.map(l =>
       `<button class="small ghost" onclick="recFail(this,'${s.id}','${l}')">${l}</button>`).join("");
     h += `<tr>${withDate ? `<td class="sub">${s.created}</td>` : ""}
-      <td>${esc(s.english)}<div class="sub">${esc(s.japanese)}</div></td>
+      <td>${esc(s.english)}${s.pinyin ? `<div class="sub">${esc(s.pinyin)}</div>` : ""}<div class="sub">${esc(s.japanese)}</div></td>
       <td class="sub pr">${s.practice_count ? s.practice_count + "回<br>" + s.last_practiced : "未"}</td>
       <td><span class="badge failc">${s.fail_count}</span><div>${fails}</div></td>
       <td style="white-space:nowrap"><button class="icon" onclick="study('${s.id}')" title="呼び出して発音・再学習">🔊</button>
@@ -533,7 +559,7 @@ function wordTable(list, withDate) {
   let h = `<table class="htable"><tr>${withDate ? "<th>日付</th>" : ""}<th>単語</th><th>意味</th><th>操作</th></tr>`;
   list.forEach(w => {
     h += `<tr>${withDate ? `<td class="sub">${w.created}</td>` : ""}
-      <td><b>${esc(w.word)}</b><div class="sub">${esc(w.example)}</div></td>
+      <td><b>${esc(w.word)}</b>${w.pinyin ? ` <span class="sub">${esc(w.pinyin)}</span>` : ""}<div class="sub">${esc(w.example)}</div></td>
       <td>${esc(w.meaning)}</td>
       <td style="white-space:nowrap"><button class="icon" onclick="speak('${w.word.replace(/'/g, "\\'")}')">🔊</button>
       <button class="icon" onclick="delWord('${w.id}')">🗑</button></td></tr>`;
