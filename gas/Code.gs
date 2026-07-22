@@ -42,6 +42,8 @@ function putFile_(folder, name, content, mime) {
   if (files.hasNext()) {
     const f = files.next();
     f.setContent(content);
+    // 同名の重複ファイルがあればゴミ箱へ（過去の競合で生じた二重ファイルを整理）
+    while (files.hasNext()) files.next().setTrashed(true);
     return { ok: true, id: f.getId(), updated: true };
   }
   const f = folder.createFile(name, content, mime || 'text/plain');

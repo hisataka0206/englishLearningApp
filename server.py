@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.15.2"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.15.3"  # 機能変更時にここを更新（画面右上に表示される）
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -92,21 +92,25 @@ def resolve_data_dir():
     return path
 
 
+PUSH_LOCK = threading.Lock()  # Drive書き込みを直列化（同名ファイル二重作成の競合を防ぐ）
+
+
 def drive_push_async():
     """Upload all data files to the Drive folder in the background."""
     if not (DRIVE and DRIVE.configured()):
         return
     def _run():
-        for name in DATA_FILES:
-            p = _file(name)
-            if not os.path.exists(p):
-                continue
-            try:
-                mime = "text/markdown" if name.endswith(".md") else "application/json"
-                with open(p, "rb") as f:
-                    DRIVE.upsert(name, f.read(), mime)
-            except Exception as e:
-                print(f"[drive] push {name} failed: {e}")
+        with PUSH_LOCK:  # 複数の保存が同時でも1つずつ順番に送る
+            for name in DATA_FILES:
+                p = _file(name)
+                if not os.path.exists(p):
+                    continue
+                try:
+                    mime = "text/markdown" if name.endswith(".md") else "application/json"
+                    with open(p, "rb") as f:
+                        DRIVE.upsert(name, f.read(), mime)
+                except Exception as e:
+                    print(f"[drive] push {name} failed: {e}")
     threading.Thread(target=_run, daemon=True).start()
 
 
