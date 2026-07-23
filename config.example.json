@@ -22,5 +22,10 @@
     "host": "0.0.0.0",
     "port": 8765
   },
-  "fail_labels": ["Fail"]
+  "fail_labels": ["Fail"],
+  "notion": {
+    "token": "PUT_YOUR_NOTION_INTEGRATION_TOKEN (ntn_...)",
+    "articles_parent_page_id": "36dcd557226180e4afe0cf5739016724",
+    "api_version": "2022-06-28"
+  }
 }

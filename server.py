@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.16.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.17.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -58,7 +58,23 @@ def make_drive():
 
 DRIVE = make_drive()
 DATA_FILES = ["sentences.json", "words.json", "sentences.md", "words.md",
-              "sentences_zh.json", "words_zh.json", "sentences_zh.md", "words_zh.md"]
+              "sentences_zh.json", "words_zh.json", "sentences_zh.md", "words_zh.md",
+              "articles_zh.json"]
+
+try:
+    from notion_client import NotionClient
+except ImportError:
+    NotionClient = None
+
+
+def make_notion():
+    n = CFG.get("notion")
+    if not n or NotionClient is None:
+        return None
+    return NotionClient(n)
+
+
+NOTION = make_notion()
 
 
 def sname(lang):
@@ -325,6 +341,116 @@ def save_word(word, meaning, example="", source_id=None, lang="en"):
         _save(wname(lang), items)
         regen_markdown()
     return {"id": rec["id"]}, None
+
+
+# ---------------------------------------------------------------- articles
+def _articles():
+    return _load("articles_zh.json")
+
+
+def articles_refresh(limit=4):
+    """未取り込みの新規記事を最大limit件だけ取り込み、残数を返す（UIが繰り返す）。"""
+    if not (NOTION and NOTION.configured()):
+        return None, "Notion未設定（config.jsonのnotion.tokenを確認）"
+    remote, err = NOTION.list_articles()
+    if err:
+        return None, f"Notion一覧取得エラー: {err}"
+    have = {a["notion_page_id"] for a in _articles()}
+    todo = [r for r in remote if r["id"] not in have]
+    imported = []
+    for r in todo[:limit]:
+        art, perr = NOTION.parse_article(r["id"])  # ネットワークはロック外で
+        if perr:
+            print(f"[articles] parse {r['title']} failed: {perr}")
+            continue
+        art["id"] = uuid.uuid4().hex
+        art["imported_at"] = now()
+        art["fails"] = []  # [{idx, syllable, hanzi, label, time, pushed}]
+        with LOCK:
+            local = _articles()
+            if art["notion_page_id"] not in {a["notion_page_id"] for a in local}:
+                local.append(art)
+                _save("articles_zh.json", local)
+        imported.append(art["title"])
+    if imported:
+        drive_push_async()
+    remaining = max(0, len(todo) - len(imported))
+    return {"imported": imported, "remaining": remaining,
+            "total": len(_articles())}, None
+
+
+def articles_list():
+    out = []
+    for a in _articles():
+        pending = sum(1 for f in a.get("fails", []) if not f.get("pushed"))
+        out.append({"id": a["id"], "title": a["title"], "date": a.get("date", ""),
+                    "sentence_count": len(a.get("sentences", [])),
+                    "vocab_count": len(a.get("vocab", [])),
+                    "pending_fails": pending,
+                    "notion_page_id": a.get("notion_page_id", "")})
+    out.sort(key=lambda x: x["date"], reverse=True)
+    return out, None
+
+
+def articles_get(article_id):
+    for a in _articles():
+        if a["id"] == article_id:
+            return a, None
+    return None, "article not found"
+
+
+def article_fail(article_id, idx, syllable, hanzi="", label="Fail"):
+    """記事の句/音節に対するFailをローカル記録（Notionへは手動pushで反映）。"""
+    if not article_id or idx is None:
+        return None, "article_id and idx are required"
+    with LOCK:
+        arts = _articles()
+        for a in arts:
+            if a["id"] == article_id:
+                a.setdefault("fails", []).append({
+                    "idx": idx, "syllable": syllable, "hanzi": hanzi,
+                    "label": label, "time": now(), "pushed": False})
+                _save("articles_zh.json", arts)
+                drive_push_async()
+                pending = sum(1 for f in a["fails"] if not f.get("pushed"))
+                return {"pending_fails": pending}, None
+    return None, "article not found"
+
+
+def article_push_fails(article_id):
+    """未反映のFailを、Notion記事末尾の失敗履歴テーブルへ書き戻す。"""
+    if not (NOTION and NOTION.configured()):
+        return None, "Notion未設定"
+    with LOCK:
+        arts = _articles()
+        art = next((a for a in arts if a["id"] == article_id), None)
+        if not art:
+            return None, "article not found"
+        pending = [f for f in art.get("fails", []) if not f.get("pushed")]
+        if not pending:
+            return {"pushed": 0}, None
+        rows = [[f["time"][:10], f"第{f['idx']}句", f.get("syllable", ""),
+                 f.get("hanzi", ""), f.get("label", "Fail")] for f in pending]
+        page_id = art["notion_page_id"]
+        table_id = art.get("notion_fail_table_id")
+        if not table_id:
+            table_id, err = NOTION.find_fail_table(page_id)
+            if err:
+                return None, f"Notion確認エラー: {err}"
+        if table_id:
+            err = NOTION.append_fail_rows(table_id, rows)
+            if err:
+                return None, f"Notion追記エラー: {err}"
+        else:
+            table_id, err = NOTION.create_fail_table(page_id, rows)
+            if err:
+                return None, f"Notion作成エラー: {err}"
+            art["notion_fail_table_id"] = table_id
+        for f in pending:
+            f["pushed"] = True
+        _save("articles_zh.json", arts)
+        drive_push_async()
+    return {"pushed": len(rows)}, None
 
 
 def record_fail(sentence_id, label="Fail"):
@@ -607,11 +733,14 @@ class Handler(BaseHTTPRequestHandler):
             if drive_ready and hasattr(DRIVE, "ping"):
                 drive_err = DRIVE.ping()  # 実通信で確認（設定値だけで✅にしない）
                 drive_ready = drive_err is None
+            global NOTION
+            NOTION = make_notion()
             self._ok({"version": APP_VERSION,
                       "ollama_ok": ollama_err is None, "ollama_error": ollama_err,
                       "models": models, "default_model": CFG["ollama"]["model"],
                       "storage_path": data_dir, "storage_mode": mode,
                       "drive_ready": drive_ready, "drive_error": drive_err,
+                      "notion_ready": bool(NOTION and NOTION.configured()),
                       "fail_labels": CFG.get("fail_labels", ["Fail"])})
         elif self.path.startswith("/api/sentences"):
             data, err = list_sentences(lang=self._lang())
@@ -619,6 +748,14 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path.startswith("/api/words"):
             data, err = list_words(lang=self._lang())
             self._ok(data) if not err else self._fail(err)
+        elif self.path == "/api/articles":
+            data, err = articles_list()
+            self._ok(data) if not err else self._fail(err)
+        elif self.path.startswith("/api/article?"):
+            from urllib.parse import urlparse, parse_qs
+            aid = (parse_qs(urlparse(self.path).query).get("id") or [""])[0]
+            data, err = articles_get(aid)
+            self._ok(data) if not err else self._fail(err, 404)
         else:
             self._send(404, {"ok": False, "error": "not found"})
 
@@ -676,6 +813,14 @@ class Handler(BaseHTTPRequestHandler):
             if not body.get("id"):
                 return self._fail("id is required", 400)
             data, err = delete_sentence(body["id"])
+        elif self.path == "/api/articles/refresh":
+            data, err = articles_refresh(int(body.get("limit", 4)))
+        elif self.path == "/api/articles/fail":
+            data, err = article_fail(body.get("article_id"), body.get("idx"),
+                                     body.get("syllable", ""), body.get("hanzi", ""),
+                                     body.get("label", "Fail"))
+        elif self.path == "/api/articles/push":
+            data, err = article_push_fails(body.get("article_id"))
         else:
             return self._send(404, {"ok": False, "error": "not found"})
 
