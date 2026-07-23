@@ -33,6 +33,15 @@
   .dateh { font-size:13px; font-weight:700; color:var(--accent); margin:14px 0 0; border-left:3px solid var(--accent); padding-left:6px; }
   .seclabel { font-size:11px; color:var(--muted); margin:6px 0 0; }
   .icon { padding:4px 8px; font-size:14px; border-radius:8px; background:#eef1f8; border:0; cursor:pointer; }
+  .navb { background:rgba(255,255,255,.2); color:#fff; font-size:16px; padding:8px 10px; border-radius:10px; border:0; cursor:pointer; }
+  .navb.active { background:#fff; color:var(--accent); }
+  .artrow { padding:10px 4px; border-bottom:1px solid #f0f1f5; cursor:pointer; }
+  .artrow:hover { background:#f8faff; }
+  .artrow .t { font-size:14px; }
+  .asent { padding:8px 4px; border-bottom:1px solid #f0f1f5; }
+  .aword { display:inline-block; margin:2px 3px; padding:3px 7px; background:#eef1f8; border-radius:8px; font-size:15px; cursor:pointer; }
+  .aword.failed { background:#fdecec; color:var(--ng); }
+  .aword .wp { display:block; font-size:10px; color:var(--accent); text-align:center; }
   .badge { background:#fdecec; color:var(--ng); border-radius:8px; font-size:12px; padding:2px 8px; }
   .msg { font-size:13px; margin-top:8px; min-height:16px; }
   .msg.ok { color:var(--ok); } .msg.ng { color:var(--ng); }
@@ -54,8 +63,10 @@
 <header>English Learning <span id="ver" style="font-size:11px;font-weight:400;opacity:.8"></span>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="status">…</div>
-    <button id="navBtn" onclick="toggleView()" style="background:rgba(255,255,255,.2);color:#fff;font-size:14px;padding:8px 12px;border-radius:10px">📜 履歴</button>
-    <button onclick="location.reload()" style="background:rgba(255,255,255,.2);color:#fff;font-size:18px;padding:8px 12px;border-radius:10px">⟳</button>
+    <button class="navb" id="nav_main" onclick="showView('main')">🎤</button>
+    <button class="navb" id="nav_articles" onclick="showView('articles')">📰</button>
+    <button class="navb" id="nav_history" onclick="showView('history')">📜</button>
+    <button class="navb" onclick="location.reload()">⟳</button>
   </div>
 </header>
 <main>
@@ -100,6 +111,27 @@
         style="flex:1;min-width:80px;font-size:13px;padding:6px;border:1px solid #d8dce6;border-radius:8px">
     </div>
     <div id="history">読み込み中…</div>
+  </div>
+</div>
+
+<div id="viewArticles" style="display:none">
+  <div class="card">
+    <h2>記事（Notion同期）
+      <button class="small ghost" id="btnRefresh" onclick="refreshArticles()">Notionから記事を更新</button>
+    </h2>
+    <div class="msg" id="msgArt"></div>
+    <div id="articleList">読み込み中…</div>
+  </div>
+  <div class="card" id="articleDetail" style="display:none">
+    <h2><button class="small ghost" onclick="closeArticle()">← 記事一覧</button>
+      <span id="artTitle"></span></h2>
+    <div class="row" style="margin-top:0">
+      <button class="primary" id="btnPush" onclick="pushFails()">Notionへ反映</button>
+      <span class="badge" id="pendingBadge"></span>
+    </div>
+    <div id="artSentences"></div>
+    <h2 style="margin-top:14px">重要語彙</h2>
+    <div id="artVocab"></div>
   </div>
 </div>
 </main>
@@ -540,17 +572,18 @@ async function delSentence(id) {
   } catch(e) { alert(e.message); }
 }
 
-// ---- 画面切替：メイン（練習） / 履歴 ----
+// ---- 画面切替：メイン（練習） / 記事 / 履歴 ----
 let view = "main";
-
-function toggleView() { showView(view === "main" ? "history" : "main"); }
 
 function showView(v) {
   view = v;
   document.getElementById("viewMain").style.display = v === "main" ? "" : "none";
+  document.getElementById("viewArticles").style.display = v === "articles" ? "" : "none";
   document.getElementById("viewHistory").style.display = v === "history" ? "" : "none";
-  document.getElementById("navBtn").textContent = v === "main" ? "📜 履歴" : "← 戻る";
+  ["main","articles","history"].forEach(x =>
+    document.getElementById("nav_" + x).classList.toggle("active", x === v));
   if (v === "history") loadHistory();
+  if (v === "articles") loadArticles();
   window.scrollTo(0, 0);
 }
 
@@ -628,6 +661,129 @@ function renderHistory() {
   box.innerHTML = h;
 }
 
+// ---- 記事モード（Notion同期） ----
+let curArticle = null;
+
+async function loadArticles() {
+  const box = document.getElementById("articleList");
+  try {
+    const list = await api("/api/articles");
+    if (!list.length) { box.innerHTML = "まだ取り込んでいません。「Notionから記事を更新」を押してください。"; return; }
+    box.innerHTML = "";
+    list.forEach(a => {
+      const d = document.createElement("div");
+      d.className = "artrow";
+      d.onclick = () => openArticle(a.id);
+      const pend = a.pending_fails ? ` <span class="badge">未反映 ${a.pending_fails}</span>` : "";
+      d.innerHTML = `<div class="t">${esc(a.title)}${pend}</div>
+        <div class="sub">${a.date} ｜ ${a.sentence_count}句 ｜ 語彙${a.vocab_count}</div>`;
+      box.appendChild(d);
+    });
+  } catch(e) { box.textContent = e.message; }
+}
+
+async function refreshArticles() {
+  const btn = document.getElementById("btnRefresh");
+  btn.disabled = true;
+  let total = 0;
+  try {
+    while (true) {
+      document.getElementById("msgArt").className = "msg ok";
+      document.getElementById("msgArt").textContent = "Notionから取り込み中…" + (total ? `（${total}件）` : "");
+      const d = await api("/api/articles/refresh", { limit: 3 });
+      total += d.imported.length;
+      await loadArticles();
+      if (d.remaining <= 0 || d.imported.length === 0) {
+        msg("msgArt", total ? `${total}件の新規記事を取り込みました` : "新規記事はありませんでした", true);
+        break;
+      }
+    }
+  } catch(e) { msg("msgArt", e.message, false); }
+  btn.disabled = false;
+}
+
+async function openArticle(id) {
+  lang = "zh";  // 記事は中国語：発音・拼音を中国語モードに
+  try {
+    const a = await api("/api/article?id=" + id);
+    curArticle = a;
+    document.getElementById("artTitle").textContent = a.title;
+    document.getElementById("articleDetail").style.display = "";
+    document.getElementById("articleList").style.display = "none";
+    renderArtSentences();
+    renderArtVocab();
+    updatePending();
+    window.scrollTo(0, 0);
+  } catch(e) { msg("msgArt", e.message, false); }
+}
+
+function closeArticle() {
+  document.getElementById("articleDetail").style.display = "none";
+  document.getElementById("articleList").style.display = "";
+  playerClose();
+  loadArticles();
+}
+
+function renderArtSentences() {
+  const box = document.getElementById("artSentences");
+  box.innerHTML = "";
+  const failed = new Set((curArticle.fails || []).map(f => f.idx + "|" + f.syllable));
+  curArticle.sentences.forEach(s => {
+    const d = document.createElement("div");
+    d.className = "asent";
+    const words = (s.pinyin || "").split(/\s+/).filter(Boolean);
+    const chips = words.map(w => {
+      const cls = failed.has(s.idx + "|" + w) ? "aword failed" : "aword";
+      return `<span class="${cls}" onclick="artFail(this,${s.idx},'${w.replace(/'/g,"\\'")}')">${esc(w)}</span>`;
+    }).join("");
+    d.innerHTML = `<div style="font-size:17px">${esc(s.zh)}</div>
+      <div style="margin:3px 0">${chips}</div>
+      ${s.ja ? `<div class="sub">${esc(s.ja)}</div>` : ""}
+      <button class="small ghost" onclick="playerLoad('${(s.zh||'').replace(/'/g,"\\'")}')">🔊 この句を発音</button>`;
+    box.appendChild(d);
+  });
+}
+
+function renderArtVocab() {
+  const box = document.getElementById("artVocab");
+  if (!curArticle.vocab || !curArticle.vocab.length) { box.innerHTML = "（なし）"; return; }
+  let h = `<table class="htable"><tr><th>中文</th><th>拼音</th><th>日本語</th></tr>`;
+  curArticle.vocab.forEach(v => {
+    h += `<tr><td><b>${esc(v.zh)}</b> <button class="icon" onclick="speak('${(v.zh||'').replace(/'/g,"\\'")}')">🔊</button></td>
+      <td class="sub">${esc(v.pinyin)}</td><td>${esc(v.ja)}</td></tr>`;
+  });
+  box.innerHTML = h + "</table>";
+}
+
+async function artFail(chip, idx, syllable) {
+  if (chip.classList.contains("failed")) return;  // 既にFail済みは二重登録しない
+  chip.classList.add("failed");
+  try {
+    const d = await api("/api/articles/fail", { article_id: curArticle.id, idx, syllable });
+    curArticle.fails = curArticle.fails || [];
+    curArticle.fails.push({ idx, syllable, pushed: false });
+    updatePending(d.pending_fails);
+  } catch(e) { chip.classList.remove("failed"); alert(e.message); }
+}
+
+function updatePending(n) {
+  if (n === undefined) n = (curArticle.fails || []).filter(f => !f.pushed).length;
+  const b = document.getElementById("pendingBadge");
+  b.textContent = n ? `未反映 ${n}` : "反映済み";
+}
+
+async function pushFails() {
+  const btn = document.getElementById("btnPush");
+  btn.disabled = true;
+  try {
+    const d = await api("/api/articles/push", { article_id: curArticle.id });
+    (curArticle.fails || []).forEach(f => f.pushed = true);
+    updatePending(0);
+    alert(d.pushed ? `Notionの失敗履歴に${d.pushed}件反映しました` : "反映するFailはありませんでした");
+  } catch(e) { alert(e.message); }
+  btn.disabled = false;
+}
+
 async function delWord(id) {
   if (!confirm("この単語を削除しますか？")) return;
   try {
@@ -647,7 +803,8 @@ async function recFail(btn, id, label) {
 }
 
 speechSynthesis.getVoices();
-setLang(lang);  // 言語ボタンの初期状態（loadHistoryも実行される）
+setLang(lang);  // 言語ボタンの初期状態
+showView("main");  // 初期画面＝練習（ナビの選択状態も設定）
 health();
 </script>
 </body>
