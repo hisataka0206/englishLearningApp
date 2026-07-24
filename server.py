@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.26.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.27.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -75,6 +75,21 @@ try:
 except ImportError:
     NotionClient = None
 
+try:
+    from azure_speech import AzureSpeech, summarize as azure_summarize
+except ImportError:
+    AzureSpeech = None
+    azure_summarize = None
+
+
+def make_azure():
+    if AzureSpeech is None:
+        return None
+    return AzureSpeech(CFG.get("azure") or {})
+
+
+AZURE = None
+
 
 def make_notion():
     n = CFG.get("notion")
@@ -84,6 +99,7 @@ def make_notion():
 
 
 NOTION = make_notion()
+AZURE = make_azure()
 
 
 def sname(lang):
@@ -843,6 +859,33 @@ class Handler(BaseHTTPRequestHandler):
         q = parse_qs(urlparse(self.path).query)
         return (q.get("lang") or ["en"])[0]
 
+    def _handle_assess(self):
+        """録音音声（生バイト）＋正解テキストを受けて発音評価を返す。"""
+        global AZURE
+        from urllib.parse import urlparse, parse_qs, unquote
+        q = parse_qs(urlparse(self.path).query)
+        text = unquote((q.get("text") or [""])[0])
+        lang = (q.get("lang") or ["zh"])[0]
+        length = int(self.headers.get("Content-Length") or 0)
+        audio = self.rfile.read(length) if length else b""
+        if not text:
+            return self._fail("text is required", 400)
+        if not audio:
+            return self._fail("audio is empty", 400)
+        AZURE = make_azure()
+        if not (AZURE and AZURE.configured()):
+            return self._fail("Azure未設定（config.jsonのazure.keyを設定してください）")
+        locale = "zh-CN" if lang == "zh" else "en-US"
+        ctype = self.headers.get("X-Audio-Type") or "audio/webm; codecs=opus"
+        raw, err = AZURE.assess(audio, text, locale, ctype)
+        if err:
+            return self._fail(err)
+        pairs = to_pinyin_pairs(text) if lang == "zh" else None
+        data = azure_summarize(raw, pairs)
+        if not data.get("ok"):
+            return self._fail(data.get("error", "評価できませんでした"))
+        self._ok(data)
+
     def _json_body(self):
         length = int(self.headers.get("Content-Length") or 0)
         if not length:
@@ -894,6 +937,7 @@ class Handler(BaseHTTPRequestHandler):
                       "storage_path": data_dir, "storage_mode": mode,
                       "drive_ready": drive_ready, "drive_error": drive_err,
                       "notion_ready": bool(NOTION and NOTION.configured()),
+                      "azure_ready": bool(make_azure() and make_azure().configured()),
                       "fail_labels": CFG.get("fail_labels", ["Fail"]),
                       "article_fail_labels": ARTICLE_FAIL_LABELS})
         elif self.path.startswith("/api/sentences"):
@@ -914,6 +958,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"ok": False, "error": "not found"})
 
     def do_POST(self):
+        if self.path.startswith("/api/assess"):
+            return self._handle_assess()
         try:
             body = self._json_body()
         except Exception as e:

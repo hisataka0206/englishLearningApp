@@ -61,6 +61,7 @@
   .cgrid.editbreaks .cchar { opacity:.75; }
   .fbtn { display:inline-block; margin:2px; padding:8px 10px; border:0; border-radius:8px; background:#eef1f8; font-size:14px; cursor:pointer; }
   .fbtn.rm { background:#fdecec; color:var(--ng); }
+  #btnRec.recording { background:var(--ng); color:#fff; }
   ruby rt { font-size:.55em; color:var(--accent); }
   .jatoggle { margin-top:6px; }
   .jatoggle summary { font-size:13px; color:var(--accent); cursor:pointer; list-style:none; display:inline-block; padding:2px 8px; background:#eef1f8; border-radius:8px; }
@@ -183,7 +184,9 @@
 
 <div id="player"><div class="inner">
   <div id="phrases"></div>
+  <div id="assessBox" style="display:none;margin-bottom:6px"></div>
   <div class="row" style="margin-top:0;align-items:center">
+    <button class="ghost" id="btnRec" onclick="toggleRecord()" title="録音して発音チェック">🎙 録音</button>
     <label class="rate">🔊 速さ <input type="range" id="rate" min="0.4" max="1.5" step="0.05" value="0.9" style="width:110px;vertical-align:middle" oninput="rateChanged(this.value)"> <b id="rateVal">0.9</b>x</label>
     <button class="small ghost" onclick="setRate(0.6)">ゆっくり</button>
     <button class="small ghost" onclick="setRate(0.9)">ふつう</button>
@@ -967,6 +970,80 @@ function playArtSentence(idx) {
   let marked = "";
   s.zh.split("").forEach((ch, i) => { marked += ch; if (breaks.has(i)) marked += " / "; });
   playerLoad(marked);
+}
+
+// ---- 録音して発音チェック（Azure Pronunciation Assessment） ----
+let mediaRec = null, recChunks = [], recTimer = null;
+
+async function toggleRecord() {
+  const btn = document.getElementById("btnRec");
+  if (mediaRec && mediaRec.state === "recording") { stopRecord(); return; }
+  const text = (player.phrases || []).join("") && (player.text || "").replace(/[/|｜／]/g, "").trim();
+  if (!text) { alert("先に発音する文を表示してください"); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recChunks = [];
+    mediaRec = new MediaRecorder(stream);
+    mediaRec.ondataavailable = e => { if (e.data.size) recChunks.push(e.data); };
+    mediaRec.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(recChunks, { type: mediaRec.mimeType || "audio/webm" });
+      sendAssess(blob, text);
+    };
+    mediaRec.start();
+    btn.textContent = "⏹ 停止";
+    btn.classList.add("recording");
+    document.getElementById("assessBox").style.display = "none";
+    clearTimeout(recTimer);
+    recTimer = setTimeout(stopRecord, 25000);  // Azure短音声の上限に合わせ自動停止
+  } catch(e) { alert("マイクを使用できません: " + e.message); }
+}
+
+function stopRecord() {
+  clearTimeout(recTimer);
+  if (mediaRec && mediaRec.state === "recording") mediaRec.stop();
+  const btn = document.getElementById("btnRec");
+  btn.textContent = "🎙 録音"; btn.classList.remove("recording");
+}
+
+async function sendAssess(blob, text) {
+  const box = document.getElementById("assessBox");
+  box.style.display = "";
+  box.innerHTML = '<span class="sub">発音を判定中…</span>';
+  try {
+    const r = await fetch(`/api/assess?lang=${lang}&text=${encodeURIComponent(text)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream", "X-Audio-Type": blob.type || "audio/webm; codecs=opus" },
+      body: blob,
+    });
+    const j = await r.json();
+    if (!j.ok) { box.innerHTML = `<span class="msg ng">${esc(j.error)}</span>`; return; }
+    renderAssess(j.data);
+  } catch(e) { box.innerHTML = `<span class="msg ng">${esc(e.message)}</span>`; }
+}
+
+function scoreColor(s) { return s >= 80 ? "var(--ok)" : s >= 60 ? "#e0a100" : "var(--ng)"; }
+
+function renderAssess(d) {
+  const box = document.getElementById("assessBox");
+  const sc = d.scores;
+  let h = `<div style="font-size:13px;margin-bottom:4px">
+    総合 <b style="color:${scoreColor(sc.pron)}">${sc.pron}</b>
+    ｜正確さ ${sc.accuracy} ｜流暢さ ${sc.fluency}${sc.prosody ? " ｜抑揚 " + sc.prosody : ""}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:4px">`;
+  d.words.forEach(w => {
+    const bad = w.error !== "None" || w.score < 60;
+    const tone = w.tone_error;
+    const title = `スコア${w.score}${tone ? " / 声調ちがい(" + w.tone_expected + "声→" + w.tone_said + "声)" : ""}`;
+    h += `<span title="${esc(title)}" style="padding:3px 7px;border-radius:8px;font-size:16px;
+      background:${bad || tone ? "#fdecec" : "#eaf7ef"};color:${scoreColor(w.score)}">
+      ${esc(w.word)}${tone ? '<sup style="font-size:10px">声調</sup>' : ""}</span>`;
+  });
+  h += "</div>";
+  const wrong = d.words.filter(w => w.error !== "None" || w.score < 60 || w.tone_error);
+  if (wrong.length) h += `<div class="sub" style="margin-top:4px">直したい: ${wrong.map(w => esc(w.word) + (w.tone_error ? "（声調）" : "")).join("、")}</div>`;
+  else h += `<div class="sub" style="margin-top:4px">よくできました！</div>`;
+  box.innerHTML = h;
 }
 
 let breakEditMode = false;
