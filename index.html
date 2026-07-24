@@ -90,6 +90,7 @@
     <div id="status">…</div>
     <button class="navb" id="nav_main" onclick="showView('main')">✍️ 自分の文</button>
     <button class="navb" id="nav_articles" onclick="showView('articles')">📰 記事</button>
+    <button class="navb" id="nav_record" onclick="showView('record')">📊 記録</button>
     <button class="navb" onclick="location.reload()">⟳</button>
   </div>
 </header>
@@ -174,11 +175,23 @@
       </div>
     </div>
   </div>
-  <!-- ミス種類ポップアップ -->
+  <!-- ミス種類ポップアップ（記事用） -->
   <div id="failPop" style="display:none;position:fixed;z-index:30;background:#fff;border:1px solid var(--accent);border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.2);padding:8px">
     <div id="failPopChar" style="font-weight:700;text-align:center;margin-bottom:4px"></div>
     <div id="failPopBtns"></div>
   </div>
+</div>
+
+<div id="viewRecord" style="display:none">
+  <div class="langsel">
+    <button id="rlang_en" onclick="setRecLang('en')">🇺🇸 英語</button>
+    <button id="rlang_zh" onclick="setRecLang('zh')">🇨🇳 中国語</button>
+  </div>
+  <div class="row" style="margin-bottom:10px">
+    <button class="tab small active" id="rtab_weak" onclick="setRecTab('weak')">苦手</button>
+    <button class="tab small" id="rtab_hist" onclick="setRecTab('hist')">履歴</button>
+  </div>
+  <div class="card"><div id="recordBody">読み込み中…</div></div>
 </div>
 </main>
 
@@ -772,10 +785,64 @@ function showView(v) {
   view = v;
   document.getElementById("viewMain").style.display = v === "main" ? "" : "none";
   document.getElementById("viewArticles").style.display = v === "articles" ? "" : "none";
-  ["main","articles"].forEach(x =>
+  document.getElementById("viewRecord").style.display = v === "record" ? "" : "none";
+  ["main","articles","record"].forEach(x =>
     document.getElementById("nav_" + x).classList.toggle("active", x === v));
   if (v === "articles") loadArticles();
+  if (v === "record") { recLang = lang; loadRecord(); }
   window.scrollTo(0, 0);
+}
+
+// ---- 記録（発音チェックの履歴と苦手） ----
+let recLang = "zh", recTab = "weak";
+
+function setRecLang(l) {
+  recLang = l;
+  document.getElementById("rlang_en").classList.toggle("active", l === "en");
+  document.getElementById("rlang_zh").classList.toggle("active", l === "zh");
+  loadRecord();
+}
+
+function setRecTab(t) {
+  recTab = t;
+  document.getElementById("rtab_weak").classList.toggle("active", t === "weak");
+  document.getElementById("rtab_hist").classList.toggle("active", t === "hist");
+  loadRecord();
+}
+
+async function loadRecord() {
+  const box = document.getElementById("recordBody");
+  document.getElementById("rlang_en").classList.toggle("active", recLang === "en");
+  document.getElementById("rlang_zh").classList.toggle("active", recLang === "zh");
+  try {
+    const list = await api(`/api/assessments?lang=${recLang}&mode=${recTab === "weak" ? "weak" : "history"}`);
+    if (!list.length) { box.innerHTML = "まだ記録がありません（発音チェックをすると貯まります）"; return; }
+    box.innerHTML = recTab === "weak" ? weakTable(list) : histTable(list);
+  } catch(e) { box.textContent = e.message; }
+}
+
+function weakTable(list) {
+  let h = `<table class="htable"><tr><th>語</th><th>ミス</th><th>平均</th><th>最終</th><th></th></tr>`;
+  list.forEach(w => {
+    const tone = w.tone ? ` <span class="badge">声調${w.tone}</span>` : "";
+    h += `<tr><td style="font-size:17px">${esc(w.word)}${tone}</td>
+      <td style="color:${w.rate >= 50 ? "var(--ng)" : "var(--muted)"}">${w.miss}/${w.tries}</td>
+      <td style="color:${scoreColor(w.avg)}">${w.avg}</td>
+      <td class="sub">${w.last}</td>
+      <td><button class="icon" onclick="speak('${w.word.replace(/'/g, "\\'")}')">🔊</button></td></tr>`;
+  });
+  return h + "</table>";
+}
+
+function histTable(list) {
+  let h = `<table class="htable"><tr><th>日時</th><th>文</th><th>総合</th></tr>`;
+  list.forEach(a => {
+    const ng = a.ng.length ? `<div class="sub" style="color:var(--ng)">${a.ng.map(esc).join("、")}</div>` : "";
+    h += `<tr><td class="sub" style="white-space:nowrap">${a.time.slice(5)}</td>
+      <td>${esc(a.text.slice(0, 40))}${ng}</td>
+      <td style="color:${scoreColor(a.pron)};font-weight:700">${a.pron}</td></tr>`;
+  });
+  return h + "</table>";
 }
 
 let sub = "compose";

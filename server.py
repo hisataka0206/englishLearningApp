@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.32.1"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.33.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -68,7 +68,7 @@ def make_drive():
 DRIVE = make_drive()
 DATA_FILES = ["sentences.json", "words.json", "sentences.md", "words.md",
               "sentences_zh.json", "words_zh.json", "sentences_zh.md", "words_zh.md",
-              "articles_zh.json"]
+              "articles_zh.json", "assessments.json"]
 
 try:
     from notion_client import NotionClient
@@ -440,6 +440,72 @@ def articles_get(article_id):
                 v["pairs"] = to_pinyin_pairs(v["zh"])
             return a, None
     return None, "article not found"
+
+
+# ---------------------------------------------------------------- 発音評価の記録
+def save_assessment(lang, text, data, source=""):
+    """発音チェックの結果を蓄積（履歴・苦手集計に使う）。"""
+    with LOCK:
+        items = _load("assessments.json")
+        rec = {
+            "id": uuid.uuid4().hex, "time": now(), "lang": lang, "text": text,
+            "source": source, "scores": data.get("scores", {}),
+            "words": [{"w": w["word"], "s": w["score"], "e": w["error"],
+                       "t": bool(w.get("tone_error")),
+                       "ts": w.get("tone_said", ""), "te": w.get("tone_expected", "")}
+                      for w in data.get("words", [])],
+        }
+        items.append(rec)
+        _save("assessments.json", items[-500:])  # 直近500回まで保持
+        drive_push_async()
+    return rec["id"]
+
+
+def list_assessments(lang="zh", limit=50):
+    items = [a for a in _load("assessments.json") if a.get("lang") == lang]
+    out = []
+    for a in reversed(items[-limit:]):
+        sc = a.get("scores", {})
+        ng = [w["w"] for w in a.get("words", [])
+              if w.get("e") not in ("None", "Omission") or w.get("s", 100) < 60 or w.get("t")]
+        out.append({"id": a["id"], "time": a["time"][:16], "text": a["text"],
+                    "pron": sc.get("pron"), "accuracy": sc.get("accuracy"),
+                    "fluency": sc.get("fluency"), "completeness": sc.get("completeness"),
+                    "ng": ng})
+    return out, None
+
+
+def weak_words(lang="zh", limit=60):
+    """単語ごとにミス率を集計して苦手順に返す。"""
+    stat = {}
+    for a in _load("assessments.json"):
+        if a.get("lang") != lang:
+            continue
+        for w in a.get("words", []):
+            if w.get("e") == "Omission":
+                continue  # 読まれなかった語は対象外
+            key = w["w"]
+            s = stat.setdefault(key, {"word": key, "tries": 0, "miss": 0, "tone": 0,
+                                      "sum": 0, "last": "", "last_score": None})
+            s["tries"] += 1
+            s["sum"] += w.get("s", 0)
+            if w.get("e") not in ("None",) or w.get("s", 100) < 60:
+                s["miss"] += 1
+            if w.get("t"):
+                s["tone"] += 1
+            s["last"] = a["time"][:10]
+            s["last_score"] = w.get("s")
+    out = []
+    for s in stat.values():
+        if s["tries"] < 1:
+            continue
+        s["avg"] = round(s["sum"] / s["tries"])
+        s["rate"] = round(100 * s["miss"] / s["tries"])
+        del s["sum"]
+        if s["miss"] or s["tone"]:
+            out.append(s)
+    out.sort(key=lambda x: (-x["miss"], x["avg"]))
+    return out[:limit], None
 
 
 def article_fail(article_id, idx, ci, char="", syllable="", label="F"):
@@ -925,6 +991,10 @@ class Handler(BaseHTTPRequestHandler):
         data = azure_summarize(raw, pairs)
         if not data.get("ok"):
             return self._fail(data.get("error", "評価できませんでした"))
+        try:
+            save_assessment(lang, text, data, (q.get("source") or [""])[0])
+        except Exception as e:
+            print(f"[assess] save failed: {e}")
         self._ok(data)
 
     def _json_body(self):
@@ -986,6 +1056,15 @@ class Handler(BaseHTTPRequestHandler):
             self._ok(data) if not err else self._fail(err)
         elif self.path.startswith("/api/words"):
             data, err = list_words(lang=self._lang())
+            self._ok(data) if not err else self._fail(err)
+        elif self.path.startswith("/api/assessments"):
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query)
+            lg = (q.get("lang") or ["zh"])[0]
+            if (q.get("mode") or [""])[0] == "weak":
+                data, err = weak_words(lg)
+            else:
+                data, err = list_assessments(lg)
             self._ok(data) if not err else self._fail(err)
         elif self.path == "/api/articles":
             data, err = articles_list()
