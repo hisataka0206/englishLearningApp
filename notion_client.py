@@ -102,6 +102,7 @@ class NotionClient:
 
         import re
         sent_re = re.compile(r"^第\s*\d+\s*句")
+        num_re = re.compile(r"^\d{1,2}[.．、]\s*(.+)")  # 「1. 中文…」番号付き
 
         sentences = []
         cur = None
@@ -115,12 +116,22 @@ class NotionClient:
                     sentences.append(cur)
                 cur = {"idx": len(sentences) + 1, "zh": "", "pinyin": "", "ja": ""}
             elif txt.startswith("中文："):
+                # 「第N句」ラベルが無いフォーマットでは「中文：」自体が文の区切り
+                if cur and cur.get("zh"):
+                    sentences.append(cur)
+                    cur = None
                 if cur is None:
                     cur = {"idx": len(sentences) + 1, "zh": "", "pinyin": "", "ja": ""}
                 cur["zh"] = txt[len("中文："):].strip()
             elif txt.startswith("拼音："):
                 if cur is not None:
                     cur["pinyin"] = txt[len("拼音："):].strip()
+            elif num_re.match(txt) and any("一" <= c <= "鿿" for c in txt):
+                # 「1. 中文…」番号付きフォーマット（中文：接頭辞なし）
+                if cur and cur.get("zh"):
+                    sentences.append(cur)
+                cur = {"idx": len(sentences) + 1, "zh": num_re.match(txt).group(1).strip(),
+                       "pinyin": "", "ja": ""}
             elif txt.startswith("日本語："):
                 if cur is not None:
                     cur["ja"] = txt[len("日本語："):].strip()
