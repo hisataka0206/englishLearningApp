@@ -344,8 +344,13 @@ function zhSplit(text, mode) {
   return zhPunct(clean, mode);
 }
 
+let explicitBreaks = false;  // trueなら「/」だけで区切る（区切り編集の確定後・自動分割しない）
+
 function splitPhrases(text, mode) {
   mode = mode || document.getElementById("splitMode").value;
+  if (explicitBreaks) {  // 編集で確定した区切りのみを使う（自動は足さない）
+    return text.split(/[/|｜／]+/).map(s => s.trim()).filter(Boolean);
+  }
   // 「/」の手動区切りは自動区切りへの追加
   const segments = text.split(/[/|｜／]+/).map(s => s.trim()).filter(Boolean);
   const out = [];
@@ -442,6 +447,7 @@ function englishEdited(el) {
   current.marked = el.textContent.replace(/\s+/g, " ").trim();  // 区切り「/」込み
   current.english = current.marked.replace(/\s*[/|｜／]+\s*/g, " ").replace(/\s+/g, " ").trim();
   current._breaks = null;  // テキストが変わったので区切りは再導出
+  explicitBreaks = /[/|｜／]/.test(current.marked);  // 手打ち「/」があれば確定区切り
   document.getElementById("btnSave").disabled = false;  // 編集したら保存可能に（呼び出し中は上書き）
   playerSync();  // 区切りの変更を練習ウィンドウに即反映
   refreshPinyin();
@@ -452,6 +458,7 @@ let mainBreakMode = false;
 
 function resetMainBreak() {
   mainBreakMode = false; current._breaks = null;
+  explicitBreaks = /[/|｜／]/.test(current.marked || "");  // 「/」があれば確定区切り扱い
   const b = document.getElementById("btnMainBreak");
   if (b) b.classList.remove("active");
   document.getElementById("english").style.display = "";
@@ -459,14 +466,22 @@ function resetMainBreak() {
   document.getElementById("breakGrid").style.display = "none";
 }
 
-function toggleMainBreakEdit() {
+async function toggleMainBreakEdit() {
   mainBreakMode = !mainBreakMode;
   document.getElementById("btnMainBreak").classList.toggle("active", mainBreakMode);
   document.getElementById("english").style.display = mainBreakMode ? "none" : "";
   document.getElementById("pinyin").style.display = mainBreakMode ? "none" : "";
   document.getElementById("breakGrid").style.display = mainBreakMode ? "" : "none";
   if (mainBreakMode) {
-    if (!current._breaks) current._breaks = deriveMainBreaks();
+    if (lang === "zh") {  // 単語分割を先に取得（自動の単語区切りを初期表示するため）
+      const clean = (current.english || "").replace(/[/|｜／\s]/g, "");
+      if (!zhWordsMap[clean]) {
+        try { const d = await api("/api/pinyin", { texts: [current.english] }); if (d.words && d.words[0]) zhWordsMap[clean] = d.words[0]; } catch(e) {}
+      }
+    }
+    if (!current._breaks) current._breaks = deriveMainBreaks();  // 自動区切りを初期表示
+    explicitBreaks = true;               // 以後はこの区切りが正（自動は足さない）
+    current.marked = buildMainMarked();
     renderMainBreakGrid();
     playerClose();  // 区切り編集に集中
   } else {
@@ -481,13 +496,12 @@ function mainTokens() {
 }
 
 function deriveMainBreaks() {
-  // current.marked の「/」位置をトークンindexの集合に変換
-  const marked = current.marked || current.english || "";
-  const segs = marked.split(/\s*[/|｜／]\s*/).filter(Boolean);
+  // 現在の実際の区切り（自動＋手動）をトークンindexの集合に変換して初期値にする
+  const phrases = splitPhrases(current.marked || current.english);
   const br = new Set(); let idx = 0;
-  for (let s = 0; s < segs.length - 1; s++) {
+  for (let s = 0; s < phrases.length - 1; s++) {
     const toks = lang === "zh"
-      ? Array.from(segs[s].replace(/\s/g, "")) : segs[s].split(/\s+/).filter(Boolean);
+      ? Array.from(phrases[s].replace(/[/|｜／\s]/g, "")) : phrases[s].split(/\s+/).filter(Boolean);
     idx += toks.length; br.add(idx - 1);
   }
   return br;
@@ -879,6 +893,7 @@ async function refreshArticles() {
 
 async function openArticle(id) {
   lang = "zh";  // 記事は中国語：発音・拼音を中国語モードに
+  explicitBreaks = false;  // 記事は自動区切り＋手動の追加
   breakEditMode = false;
   document.getElementById("btnBreakEdit").classList.remove("active");
   document.getElementById("breakEditHint").textContent = "";
@@ -946,6 +961,7 @@ function renderArtSentences() {
 function playArtSentence(idx) {
   const s = curArticle.sentences.find(x => x.idx === idx);
   if (!s) return;
+  explicitBreaks = false;  // 記事は自動区切り＋手動の追加
   // 区切り位置に「/」を差し込んで節分割してプレイヤーへ
   const breaks = new Set(s.breaks || []);
   let marked = "";
