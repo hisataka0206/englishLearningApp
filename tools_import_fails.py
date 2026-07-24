@@ -106,6 +106,7 @@ def main():
             skipped_vocab += len(fl)  # 語彙表など拼音行以外は対象外
             continue
         zh = sent[idx]["zh"]; prs = pairs_of(zh)
+        fl = [x for x in fl if x[1] != "a"]  # 「add」(単語追加)は発音ミスではないので除外
         fl_sorted = sorted(fl, key=lambda x: x[2])  # datetime昇順＝読み順
         pin_re = re.compile(r"[a-zāáǎàēéěèīíǐìōóǒòūúǔùüǘǚǜ]", re.I)
 
