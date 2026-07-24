@@ -63,6 +63,14 @@
   .fbtn.rm { background:#fdecec; color:var(--ng); }
   #btnRec.recording { background:var(--ng); color:#fff; }
   ruby rt { font-size:.55em; color:var(--accent); }
+  .weak { padding:10px 4px; border-bottom:1px solid #f0f1f5; }
+  .weak:last-child { border-bottom:0; }
+  .wtop { display:flex; align-items:center; gap:8px; }
+  .wword { font-size:22px; line-height:1.5; }
+  .wstats { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
+  .wstats span { background:#f5f6fa; border-radius:8px; padding:3px 8px; font-size:13px; }
+  .wstats i { color:var(--muted); font-style:normal; margin-right:4px; font-size:11px; }
+  .wstats b { font-weight:700; }
   .jatoggle { margin-top:6px; }
   .jatoggle summary { font-size:13px; color:var(--accent); cursor:pointer; list-style:none; display:inline-block; padding:2px 8px; background:#eef1f8; border-radius:8px; }
   .jatoggle summary::-webkit-details-marker { display:none; }
@@ -822,16 +830,24 @@ async function loadRecord() {
 }
 
 function weakTable(list) {
-  let h = `<table class="htable"><tr><th>語</th><th>ミス</th><th>平均</th><th>最終</th><th></th></tr>`;
+  let h = "";
   list.forEach(w => {
-    const tone = w.tone ? ` <span class="badge">声調${w.tone}</span>` : "";
-    h += `<tr><td style="font-size:17px">${esc(w.word)}${tone}</td>
-      <td style="color:${w.rate >= 50 ? "var(--ng)" : "var(--muted)"}">${w.miss}/${w.tries}</td>
-      <td style="color:${scoreColor(w.avg)}">${w.avg}</td>
-      <td class="sub">${w.last}</td>
-      <td><button class="icon" onclick="speak('${w.word.replace(/'/g, "\\'")}')">🔊</button></td></tr>`;
+    const label = w.pairs ? rubyHTML(w.pairs, w.word) : esc(w.word);
+    h += `<div class="weak">
+      <div class="wtop">
+        <span class="wword">${label}</span>
+        <button class="icon" onclick="speak('${w.word.replace(/'/g, "\\'")}')">🔊</button>
+      </div>
+      <div class="wstats">
+        <span><i>ミス率</i><b style="color:${w.rate >= 50 ? "var(--ng)" : "inherit"}">${w.rate}%</b></span>
+        <span><i>ミス回数</i><b>${w.miss} / ${w.tries}</b></span>
+        <span><i>平均点</i><b style="color:${scoreColor(w.avg)}">${w.avg}</b></span>
+        ${w.tone ? `<span><i>声調ミス</i><b style="color:var(--ng)">${w.tone}</b></span>` : ""}
+        <span><i>最終</i><b>${w.last}</b></span>
+      </div>
+    </div>`;
   });
-  return h + "</table>";
+  return h;
 }
 
 function histTable(list) {

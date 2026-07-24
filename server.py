@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.33.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.33.1"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -503,6 +503,8 @@ def weak_words(lang="zh", limit=60):
         s["rate"] = round(100 * s["miss"] / s["tries"])
         del s["sum"]
         if s["miss"] or s["tone"]:
+            if lang == "zh":  # 文字の上に拼音を出すための対応表
+                s["pairs"] = to_pinyin_pairs(s["word"])
             out.append(s)
     out.sort(key=lambda x: (-x["miss"], x["avg"]))
     return out[:limit], None
