@@ -1129,23 +1129,54 @@ function renderAssess(d) {
     h += `<div class="msg ng" style="margin:0 0 4px">うまく録音できていないようです（${omitted}語が聞き取れず）。
       マイクに近づいて、文をひと続きに読んでからもう一度お試しください。</div>`;
   }
-  h += `<div style="display:flex;flex-wrap:wrap;gap:4px">`;
-  d.words.forEach(w => {
+  h += `<div style="display:flex;flex-wrap:wrap;gap:4px" id="assessWords">`;
+  d.words.forEach((w, i) => {
     const miss = w.error === "Omission";
     const bad = (w.error !== "None" && !miss) || (w.score < 60 && !miss);
     const tone = w.tone_error;
-    const title = miss ? "読まれていません"
-      : `スコア${w.score}${tone ? " / 声調ちがい(" + w.tone_expected + "声→" + w.tone_said + "声)" : ""}`;
     const bg = miss ? "#eef1f8" : (bad || tone ? "#fdecec" : "#eaf7ef");
     const col = miss ? "var(--muted)" : scoreColor(w.score);
-    h += `<span title="${esc(title)}" style="padding:3px 7px;border-radius:8px;font-size:16px;
+    h += `<span class="aw" data-i="${i}" style="padding:3px 7px;border-radius:8px;font-size:16px;cursor:pointer;
       background:${bg};color:${col}">${esc(w.word)}${tone ? '<sup style="font-size:10px">声調</sup>' : ""}</span>`;
   });
-  h += "</div>";
+  h += `</div><div class="sub" style="margin-top:3px;font-size:11px">単語を長押し（PCは右クリック）で詳しい説明</div>`;
   const wrong = d.words.filter(w => w.error !== "Omission" && (w.error !== "None" || w.score < 60 || w.tone_error));
   if (wrong.length) h += `<div class="sub" style="margin-top:4px">直したい: ${wrong.map(w => esc(w.word) + (w.tone_error ? "（声調）" : "")).join("、")}</div>`;
   else if (sc.completeness >= 50) h += `<div class="sub" style="margin-top:4px">よくできました！</div>`;
   box.innerHTML = h;
+  lastAssess = d;
+  // 単語の長押し／右クリックで説明を表示
+  box.querySelectorAll(".aw").forEach(el => {
+    el.oncontextmenu = ev => { ev.preventDefault(); showWordDetail(+el.dataset.i); return false; };
+    let t = null;
+    el.addEventListener("touchstart", () => {
+      t = setTimeout(() => { t = null; showWordDetail(+el.dataset.i); }, 450);
+    }, { passive: true });
+    const cancel = () => { if (t) { clearTimeout(t); t = null; } };
+    el.addEventListener("touchend", cancel);
+    el.addEventListener("touchmove", cancel);
+  });
+}
+
+let lastAssess = null;
+
+function showWordDetail(i) {
+  const w = lastAssess && lastAssess.words[i];
+  if (!w) return;
+  let msg = `「${w.word}」\n\n`;
+  if (w.error === "Omission") {
+    msg += "⬜ グレー＝この単語が聞き取れませんでした。\n読み飛ばしたか、声が小さかった可能性があります。";
+  } else {
+    msg += `発音スコア: ${w.score} 点\n`;
+    msg += w.score >= 80 ? "🟩 緑＝よくできています（80点以上）\n"
+         : w.score >= 60 ? "🟨 黄＝おしい（60〜79点）。もう少しはっきり発音しましょう\n"
+         : "🟥 赤＝お手本と違って聞こえます（60点未満）\n";
+    if (w.error === "Mispronunciation") msg += "\n判定: 発音まちがい\n";
+    if (w.error === "Insertion") msg += "\n判定: 余分な音が入っています\n";
+    if (w.tone_error) msg += `\n声調ちがい: 本来は${w.tone_expected}声ですが、${w.tone_said}声で発音しています\n`;
+    if (w.phonemes && w.phonemes.length) msg += `\n発音記号: ${w.phonemes.join(" ")}`;
+  }
+  alert(msg);
 }
 
 let breakEditMode = false;
