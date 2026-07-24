@@ -156,6 +156,7 @@
     <h2><button class="small ghost" onclick="closeArticle()">← 記事一覧</button>
       <span id="artTitle"></span>
       <button class="small ghost" onclick="showArtHelp()" title="使い方" style="float:right">❓</button></h2>
+    <div id="artMeta" style="margin:-4px 0 10px;color:var(--muted)"></div>
     <div id="artSentences"></div>
     <h2 style="margin-top:14px">重要語彙</h2>
     <div id="artVocab"></div>
@@ -726,13 +727,13 @@ async function loadArticles() {
       const d = document.createElement("div");
       d.className = "artrow" + (a.studied ? " studied" : "");
       d.onclick = () => openArticle(a.id);
-      // タイトル先頭に日付が入っているので日付は重複表示しない
       const status = a.studied
         ? `学習 ${a.last_studied}（${a.study_count}回）｜ Nomiss ${a.nomiss}%`
         : `未学習`;
       const pend = a.pending_fails ? ` <span class="badge">未反映 ${a.pending_fails}</span>` : "";
-      d.innerHTML = `<div class="t">${esc(a.title)}${pend}</div>
-        <div class="sub">${status}</div>`;
+      const title = a.jp_title || a.zh_title || a.title;
+      d.innerHTML = `<div class="t">${esc(title)}${pend}</div>
+        <div class="sub">${a.date}　｜　${status}</div>`;
       box.appendChild(d);
     });
   } catch(e) { box.textContent = e.message; }
@@ -766,7 +767,13 @@ async function openArticle(id) {
   try {
     const a = await api("/api/article?id=" + id);
     curArticle = a;
-    document.getElementById("artTitle").textContent = a.title;
+    document.getElementById("artTitle").textContent = a.jp_title || a.zh_title || a.title;
+    // 原文リンク＋中文タイトルを冒頭に表示
+    const meta = document.getElementById("artMeta");
+    let mh = "";
+    if (a.zh_title) mh += `<div style="font-size:13px">${esc(a.zh_title)}</div>`;
+    if (a.source_url) mh += `<a href="${esc(a.source_url)}" target="_blank" rel="noopener" style="font-size:13px">🔗 原文を開く</a>`;
+    meta.innerHTML = mh;
     document.getElementById("articleDetail").style.display = "";
     document.getElementById("articleListCard").style.display = "none";
     renderArtSentences();

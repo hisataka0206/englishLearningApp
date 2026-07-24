@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.21.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.22.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -403,6 +403,7 @@ def articles_list():
         sessions = a.get("sessions", [])
         last = sessions[-1] if sessions else None
         out.append({"id": a["id"], "title": a["title"], "date": a.get("date", ""),
+                    "jp_title": a.get("jp_title", ""), "zh_title": a.get("zh_title", ""),
                     "studied": bool(sessions),
                     "last_studied": last["date"] if last else "",
                     "nomiss": last["nomiss"] if last else None,

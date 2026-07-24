@@ -7,6 +7,7 @@ Used by server.py for the article (記事) mode:
 """
 
 import json
+import re
 import urllib.request
 import urllib.error
 
@@ -86,6 +87,48 @@ class NotionClient:
                     out.append({"id": b["id"].replace("-", ""), "title": title})
         return out, None
 
+    @staticmethod
+    def _hrefs(block):
+        t = block.get("type")
+        return [x.get("href") for x in block.get(t, {}).get("rich_text", []) if x.get("href")]
+
+    def extract_meta(self, blocks):
+        """出典情報から原文URLと日本語タイトルを抽出する。"""
+        source_url, jp_title = "", ""
+        for b in blocks:
+            txt = self._text(b)
+            # 「中文要约/要約」見出し以降は本文なのでメタ領域終了
+            if b["type"].startswith("heading") and "中文要" in txt:
+                break
+            if b["type"] == "table":
+                rows, _ = self._children(b["id"])
+                for r in (rows or []):
+                    if r.get("type") != "table_row":
+                        continue
+                    cells = r["table_row"]["cells"]
+                    label = "".join(x.get("plain_text", "") for x in cells[0]) if cells else ""
+                    val = "".join(x.get("plain_text", "") for x in cells[1]) if len(cells) > 1 else ""
+                    hrefs = [x.get("href") for c in cells for x in c if x.get("href")]
+                    if label in ("原タイトル", "日本語訳", "日本語タイトル") and val and not jp_title:
+                        jp_title = val.strip()
+                    if "原文URL" in label or "原文" in label:
+                        for h in hrefs:
+                            if h and "notion.so" not in h and not source_url:
+                                source_url = h
+                        if not source_url:
+                            m = re.search(r"https?://\S+", val)
+                            if m and "notion.so" not in m.group(0):
+                                source_url = m.group(0)
+            else:
+                for h in self._hrefs(b):
+                    if h and "notion.so" not in h and not source_url:
+                        source_url = h
+                if not source_url:
+                    m = re.search(r"https?://[^\s）)]+", txt)
+                    if m and "notion.so" not in m.group(0):
+                        source_url = m.group(0)
+        return source_url, jp_title
+
     def parse_article(self, page_id):
         """Parse one article page into structured data."""
         page, err = self._req("GET", f"pages/{page_id}")
@@ -148,8 +191,12 @@ class NotionClient:
         if cur and cur.get("zh"):
             sentences.append(cur)
 
+        source_url, jp_title = self.extract_meta(blocks)
+        date = title[:10] if re.match(r"\d{4}-\d\d-\d\d", title) else ""
+        zh_title = title[10:].strip() if date else title
         return {"notion_page_id": page_id.replace("-", ""), "title": title,
-                "date": title[:10], "sentences": sentences, "vocab": vocab}, None
+                "date": date, "zh_title": zh_title, "jp_title": jp_title,
+                "source_url": source_url, "sentences": sentences, "vocab": vocab}, None
 
     # ------------------------------------------------------------ write-back
     @staticmethod
