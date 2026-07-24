@@ -33,6 +33,9 @@
   .dateh { font-size:13px; font-weight:700; color:var(--accent); margin:14px 0 0; border-left:3px solid var(--accent); padding-left:6px; }
   .seclabel { font-size:11px; color:var(--muted); margin:6px 0 0; }
   .icon { padding:4px 8px; font-size:14px; border-radius:8px; background:#eef1f8; border:0; cursor:pointer; }
+  .langsel { display:flex; gap:8px; margin-bottom:12px; }
+  .langsel button { flex:1; padding:12px; font-size:16px; font-weight:700; border:2px solid #d8dce6; background:#fff; color:#555; border-radius:12px; cursor:pointer; }
+  .langsel button.active { border-color:var(--accent); background:var(--accent); color:#fff; }
   .navb { background:rgba(255,255,255,.2); color:#fff; font-size:16px; padding:8px 10px; border-radius:10px; border:0; cursor:pointer; }
   .navb.active { background:#fff; color:var(--accent); }
   .artrow { padding:10px 4px; border-bottom:1px solid #f0f1f5; cursor:pointer; }
@@ -86,19 +89,20 @@
 </header>
 <main>
 <div id="viewMain">
+  <div class="langsel">
+    <button id="lang_en" onclick="setLang('en')">🇺🇸 英語</button>
+    <button id="lang_zh" onclick="setLang('zh')">🇨🇳 中国語</button>
+  </div>
   <div class="row" style="margin-bottom:10px">
     <button class="tab small active" id="sub_compose" onclick="setSub('compose')">作成</button>
     <button class="tab small" id="sub_history" onclick="setSub('history')">履歴</button>
   </div>
   <div id="subCompose">
   <div class="card">
-    <h2>言いたいことを日本語で</h2>
-    <textarea id="ja" placeholder="例：きょうは友だちと公園でサッカーをしてあそんだよ"></textarea>
+    <textarea id="ja" placeholder="言いたいことを日本語で入力"></textarea>
     <div class="row">
       <button class="primary" id="btnTr" onclick="doTranslate()">英語にする</button>
-      <button class="small tab" id="lang_en" onclick="setLang('en')">英語</button>
-      <button class="small tab" id="lang_zh" onclick="setLang('zh')">中国語</button>
-      <select id="model"></select>
+      <select id="model" title="翻訳モデル"></select>
     </div>
     <div class="msg" id="msgTr"></div>
   </div>
