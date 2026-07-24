@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.24.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.25.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [

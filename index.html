@@ -287,27 +287,33 @@ function speak(text) {  // 短い単語・サンプル用（プレイヤーを�
   speechSynthesis.speak(makeUtter(text));
 }
 
-// ---- フレーズプレイヤー：節ごとに分解して再生・一時停止・途中再開 ----
-const CONJ = /\s+(?=(?:and|but|or|so|because|when|while|that|which|who|whose|where|after|before|if|although|though|until|unless|since|as)\b)/i;
-const PREP = /\s+(?=(?:to|in|on|at|with|for|from|about|into|over|under|around|through|during|near|behind|between)\b)/i;
+// ---- フレーズプレイヤー：節（センスグループ）ごとに分解 ----
+// 英語のセンスグループ境界：接続詞・関係詞・前置詞・不定詞to の前で区切る
+const ENG_BREAK = /\s+(?=(?:and|but|or|nor|so|yet|because|although|though|while|when|whenever|whereas|if|unless|until|since|that|which|who|whose|whom|where|after|before|to|in|on|at|with|for|from|of|about|into|onto|over|under|through|during|between|among|against|without|within)\b)/i;
 
 function autoSplit(text, mode) {
   if (mode === "sentence") {
     return (text.match(/[^.!?]+[.!?]*/g) || [text]).map(s => s.trim()).filter(Boolean);
   }
-  const limit = mode === "fine" ? 4 : 8;  // この語数を超えたら接続詞でも分割
-  const parts = text.match(/[^,;:.!?]+[,;:.!?]*/g) || [text];
+  // まず句読点で節に分ける
+  const clauses = text.match(/[^,;:.!?]+[,;:.!?]*/g) || [text];
   const out = [];
-  parts.forEach(p => {
-    p = p.trim();
-    if (!p) return;
-    let subs = p.split(/\s+/).length > limit ? p.split(CONJ) : [p];
-    if (mode === "fine") {
-      // 細かめ：長い節は前置詞の前でもさらに分割してできるだけ短く
-      subs = subs.flatMap(sub =>
-        sub.trim().split(/\s+/).length > limit ? sub.split(PREP) : [sub]);
-    }
-    subs.forEach(sub => { sub = sub.trim(); if (sub) out.push(sub); });
+  clauses.forEach(c => {
+    c = c.trim();
+    if (!c) return;
+    if (mode !== "fine") { out.push(c); return; }  // ふつう＝句読点のみ
+    // 細かめ＝センスグループへ自動分割
+    const parts = c.split(ENG_BREAK).map(s => s.trim()).filter(Boolean);
+    const merged = [];
+    parts.forEach(p => {
+      // 1語だけの断片は前のグループに結合（"I / love" のような分断を防ぐ）
+      if (merged.length && p.split(/\s+/).length <= 1) merged[merged.length - 1] += " " + p;
+      else merged.push(p);
+    });
+    // 先頭が1語だけの孤立なら次に結合
+    if (merged.length > 1 && merged[0].split(/\s+/).length <= 1)
+      merged.splice(0, 2, merged[0] + " " + merged[1]);
+    (merged.length ? merged : [c]).forEach(m => out.push(m));
   });
   return out.length ? out : [text];
 }
