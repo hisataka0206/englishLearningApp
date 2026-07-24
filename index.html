@@ -53,6 +53,7 @@
   .cgap:hover { background:#cdd7f5; }
   .fbtn { display:inline-block; margin:2px; padding:8px 10px; border:0; border-radius:8px; background:#eef1f8; font-size:14px; cursor:pointer; }
   .fbtn.rm { background:#fdecec; color:var(--ng); }
+  ruby rt { font-size:.55em; color:var(--accent); }
   .jatoggle { margin-top:6px; }
   .jatoggle summary { font-size:13px; color:var(--accent); cursor:pointer; list-style:none; display:inline-block; padding:2px 8px; background:#eef1f8; border-radius:8px; }
   .jatoggle summary::-webkit-details-marker { display:none; }
@@ -107,13 +108,13 @@
     <div id="english" contenteditable="true" oninput="englishEdited(this)"></div>
     <div id="pinyin" style="color:var(--muted);font-size:13px;margin-top:2px"></div>
     <div class="row">
-      <button class="ghost" onclick="playerLoad(document.getElementById('english').textContent)">🔊 発音</button>
-      <button class="ghost" onmousedown="event.preventDefault()" ontouchend="event.preventDefault();insertSlash()" onclick="insertSlash()">／ 区切り挿入</button>
-      <button class="primary" id="btnSave" onclick="saveSentence()">保存</button>
+      <button class="ghost" onclick="playerLoad(document.getElementById('english').textContent)" title="発音">🔊</button>
+      <button class="ghost" onmousedown="event.preventDefault()" ontouchend="event.preventDefault();insertSlash()" onclick="insertSlash()" title="区切りを挿入">／</button>
+      <button class="primary" id="btnSave" onclick="saveSentence()" title="保存">💾</button>
     </div>
     <div id="kwBox" style="margin-top:10px"></div>
     <div class="row" id="kwActions" style="display:none">
-      <button class="ghost" id="btnWords" onclick="saveWords()">チェックした単語を登録</button>
+      <button class="ghost" id="btnWords" onclick="saveWords()">＋ 単語登録</button>
     </div>
     <div class="msg" id="msgSave"></div>
   </div>
@@ -136,24 +137,22 @@
 
 <div id="viewArticles" style="display:none">
   <div class="card">
-    <h2>記事（Notion同期）
-      <button class="small ghost" id="btnRefresh" onclick="refreshArticles()">Notionから記事を更新</button>
+    <h2>記事
+      <button class="small ghost" id="btnRefresh" onclick="refreshArticles()" title="Notionから新着記事を取り込み">🔄</button>
     </h2>
     <div class="msg" id="msgArt"></div>
     <div id="articleList">読み込み中…</div>
   </div>
   <div class="card" id="articleDetail" style="display:none">
-    <h2><button class="small ghost" onclick="closeArticle()">← 記事一覧</button>
-      <span id="artTitle"></span></h2>
-    <div style="font-size:12px;color:var(--muted);background:#f5f6fa;border-radius:8px;padding:6px 8px;margin-bottom:8px">
-      文字を<b>タップ=発音</b>／<b>長押し（PCは右クリック）=ミス記録</b>。文字のすき間をタップで<b>区切り</b>。▶で節ごとに発音。日本語は「日本語を見る」で表示。
-    </div>
+    <h2><button class="small ghost" onclick="closeArticle()">←</button>
+      <span id="artTitle"></span>
+      <button class="small ghost" onclick="showArtHelp()" title="使い方" style="float:right">❓</button></h2>
     <div id="artSentences"></div>
     <h2 style="margin-top:14px">重要語彙</h2>
     <div id="artVocab"></div>
     <div class="row" style="margin-top:14px;position:sticky;bottom:0;background:var(--card);padding:8px 0">
       <button class="primary" onclick="finishStudy()">✅ 勉強完了</button>
-      <button class="ghost" id="btnPush" onclick="pushFails()">Notionへ反映</button>
+      <button class="ghost" id="btnPush" onclick="pushFails()" title="ミスをNotionへ反映">⬆️ Notion</button>
       <span class="badge" id="pendingBadge"></span>
     </div>
   </div>
@@ -195,7 +194,7 @@ let lang = localStorage.getItem("targetLang") || "en";
 const LABELS = {
   en: {
     name: "英語", toBtn: "英語にする",
-    transHead: "英訳（タップで編集可。「/」を入れるとその位置で発音を区切ります）",
+    transHead: "英訳 ✏️",
     sentTab: "英文のみ", sentCol: "英文 / 日本語", unit: "英文",
     delConfirm: "この英文を削除しますか？",
     restudy: "保存済みの英文を再学習中（区切りを編集して保存すると上書きされます）",
@@ -205,7 +204,7 @@ const LABELS = {
   },
   zh: {
     name: "中国語", toBtn: "中国語にする",
-    transHead: "中国語訳（タップで編集可。「/」を入れるとその位置で発音を区切ります）",
+    transHead: "中国語訳 ✏️",
     sentTab: "中国語のみ", sentCol: "中国語 / 日本語", unit: "文",
     delConfirm: "この文を削除しますか？",
     restudy: "保存済みの文を再学習中（区切りを編集して保存すると上書きされます）",
@@ -793,8 +792,8 @@ function renderArtSentences() {
     });
     grid += "</div>";
     d.innerHTML = grid +
-      `<button class="small ghost" onclick='playArtSentence(${s.idx})'>▶ 節ごとに発音</button>` +
-      (s.ja ? `<details class="jatoggle"><summary>日本語を見る</summary><div class="sub" style="margin-top:4px">${esc(s.ja)}</div></details>` : "");
+      `<button class="small ghost" onclick='playArtSentence(${s.idx})' title="節ごとに発音">▶</button>` +
+      (s.ja ? `<details class="jatoggle"><summary>日本語</summary><div class="sub" style="margin-top:4px">${esc(s.ja)}</div></details>` : "");
     box.appendChild(d);
     // 長押し（モバイル）でミス記録メニュー
     d.querySelectorAll(".cchar").forEach(el => attachLongPress(el));
@@ -821,6 +820,10 @@ function toggleBreak(idx, pos) {
 }
 
 let suppressTap = false;
+function showArtHelp() {
+  alert("文字をタップ＝発音\n長押し（PCは右クリック）＝ミス記録\n文字のすき間をタップ＝区切り\n▶＝節ごとに発音\n「日本語」＝訳を表示");
+}
+
 function charTap(ch) { if (suppressTap) { suppressTap = false; return; } speak(ch); }  // タップ＝発音
 
 // 長押し（touch）でミス記録メニュー
@@ -890,13 +893,21 @@ async function removeCharFail(idx, ci) {
   } catch(e) { alert(e.message); }
 }
 
+function rubyHTML(pairs, zh) {
+  // 文字の上に拼音を載せて1行で表現
+  if (!pairs) return esc(zh || "");
+  return pairs.map(([ch, py]) =>
+    `<ruby>${esc(ch)}<rt>${esc(py)}</rt></ruby>`).join("");
+}
+
 function renderArtVocab() {
   const box = document.getElementById("artVocab");
   if (!curArticle.vocab || !curArticle.vocab.length) { box.innerHTML = "（なし）"; return; }
-  let h = `<table class="htable"><tr><th>中文</th><th>拼音</th><th>日本語</th></tr>`;
+  let h = `<table class="htable"><tr><th>語</th><th>日本語</th></tr>`;
   curArticle.vocab.forEach(v => {
-    h += `<tr><td><b>${esc(v.zh)}</b> <button class="icon" onclick="speak('${(v.zh||'').replace(/'/g,"\\'")}')">🔊</button></td>
-      <td class="sub">${esc(v.pinyin)}</td><td>${esc(v.ja)}</td></tr>`;
+    h += `<tr><td><span style="font-size:19px">${rubyHTML(v.pairs, v.zh)}</span>
+      <button class="icon" onclick="speak('${(v.zh||'').replace(/'/g,"\\'")}')">🔊</button></td>
+      <td>${esc(v.ja)}</td></tr>`;
   });
   box.innerHTML = h + "</table>";
 }

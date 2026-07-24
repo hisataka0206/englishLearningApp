@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.19.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.19.1"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -419,6 +419,8 @@ def articles_get(article_id):
             # 拼音ペアは常に最新ロジックで再計算（数字の拼音などを反映）
             for s in a.get("sentences", []):
                 s["pairs"] = to_pinyin_pairs(s["zh"])
+            for v in a.get("vocab", []):
+                v["pairs"] = to_pinyin_pairs(v["zh"])
             return a, None
     return None, "article not found"
 
