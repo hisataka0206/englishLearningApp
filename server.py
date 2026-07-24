@@ -872,6 +872,25 @@ class Handler(BaseHTTPRequestHandler):
             return self._fail("text is required", 400)
         if not audio:
             return self._fail("audio is empty", 400)
+        # 解析用に録音を保存（recordings/ 配下・最新20件）
+        try:
+            rec_dir = os.path.join(BASE_DIR, "recordings")
+            os.makedirs(rec_dir, exist_ok=True)
+            ext = ".webm" if "webm" in (self.headers.get("X-Audio-Type") or "") else ".bin"
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            with open(os.path.join(rec_dir, f"{ts}{ext}"), "wb") as f:
+                f.write(audio)
+            with open(os.path.join(rec_dir, f"{ts}.txt"), "w", encoding="utf-8") as f:
+                f.write(text)
+            olds = sorted(os.listdir(rec_dir))
+            for old in olds[:-40]:
+                try:
+                    os.remove(os.path.join(rec_dir, old))
+                except OSError:
+                    pass
+        except Exception as e:
+            print(f"[rec] save failed: {e}")
+
         AZURE = make_azure()
         if not (AZURE and AZURE.configured()):
             return self._fail("Azure未設定（config.jsonのazure.keyを設定してください）")

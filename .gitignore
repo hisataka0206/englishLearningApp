@@ -6,3 +6,4 @@ config.json
 drive_token.json
 cert.pem
 key.pem
+recordings/
