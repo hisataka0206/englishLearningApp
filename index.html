@@ -187,6 +187,8 @@
   <div id="assessBox" style="display:none;margin-bottom:6px"></div>
   <div class="row" style="margin-top:0;align-items:center">
     <button class="ghost" id="btnRec" onclick="toggleRecord()" title="録音して発音チェック">🎙 録音</button>
+    <button class="ghost" id="btnPlayRec" onclick="playMyRec()" title="自分の録音を聴く" style="display:none">▶ 自分</button>
+    <button class="ghost" id="btnPlayModel" onclick="playModel()" title="お手本を聴く" style="display:none">▶ お手本</button>
     <label class="rate">🔊 速さ <input type="range" id="rate" min="0.4" max="1.5" step="0.05" value="0.9" style="width:110px;vertical-align:middle" oninput="rateChanged(this.value)"> <b id="rateVal">0.9</b>x</label>
     <button class="small ghost" onclick="setRate(0.6)">ゆっくり</button>
     <button class="small ghost" onclick="setRate(0.9)">ふつう</button>
@@ -391,7 +393,18 @@ function insertSlash() {
 
 const player = { text: "", phrases: [], idx: 0, playing: false, gen: 0 };
 
+function clearRecording() {   // 別の文に切り替えたら前の録音は消す
+  if (recUrl) { URL.revokeObjectURL(recUrl); recUrl = null; }
+  recAudio = null; recText = "";
+  const a = document.getElementById("btnPlayRec"), b = document.getElementById("btnPlayModel");
+  if (a) a.style.display = "none";
+  if (b) b.style.display = "none";
+  const box = document.getElementById("assessBox");
+  if (box) { box.style.display = "none"; box.innerHTML = ""; }
+}
+
 function playerSetText(text) {
+  if (player.text && player.text !== text) clearRecording();
   player.text = text;
   player.phrases = splitPhrases(text);
   player.idx = 0;
@@ -993,6 +1006,7 @@ async function toggleRecord() {
     mediaRec.onstop = () => {
       stream.getTracks().forEach(t => t.stop());
       const blob = new Blob(recChunks, { type: mediaRec.mimeType || "audio/webm" });
+      setRecording(blob, text);   // 自分の録音を聴けるように保持
       sendAssess(blob, text);
     };
     mediaRec.start();
@@ -1014,6 +1028,32 @@ function stopRecord() {
   if (mediaRec && mediaRec.state === "recording") mediaRec.stop();
   const btn = document.getElementById("btnRec");
   btn.textContent = "🎙 録音"; btn.classList.remove("recording");
+}
+
+// ---- 録音の保持・再生（聴き比べ用） ----
+let recUrl = null, recAudio = null, recText = "";
+
+function setRecording(blob, text) {
+  if (recUrl) URL.revokeObjectURL(recUrl);
+  recUrl = URL.createObjectURL(blob);
+  recText = text;
+  recAudio = new Audio(recUrl);
+  document.getElementById("btnPlayRec").style.display = "";
+  document.getElementById("btnPlayModel").style.display = "";
+}
+
+function playMyRec() {
+  if (!recAudio) return;
+  speechSynthesis.cancel();  // お手本と重ならないように
+  playerStop();
+  recAudio.currentTime = 0;
+  recAudio.play().catch(e => alert("再生できません: " + e.message));
+}
+
+function playModel() {   // お手本（音声合成）を同じ文で再生
+  if (!recText) return;
+  if (recAudio) recAudio.pause();
+  speak(recText);
 }
 
 async function sendAssess(blob, text) {
