@@ -145,7 +145,7 @@
 </div>
 
 <div id="viewArticles" style="display:none">
-  <div class="card">
+  <div class="card" id="articleListCard">
     <h2>記事
       <button class="small ghost" id="btnRefresh" onclick="refreshArticles()" title="Notionから新着記事を取り込み">🔄</button>
     </h2>
@@ -153,20 +153,22 @@
     <div id="articleList">読み込み中…</div>
   </div>
   <div class="card" id="articleDetail" style="display:none">
-    <h2><button class="small ghost" onclick="closeArticle()">←</button>
+    <h2><button class="small ghost" onclick="closeArticle()">← 記事一覧</button>
       <span id="artTitle"></span>
       <button class="small ghost" onclick="showArtHelp()" title="使い方" style="float:right">❓</button></h2>
-    <div class="row" style="margin-top:0">
-      <button class="small tab" id="btnBreakEdit" onclick="toggleBreakEdit()">✂️ 区切り編集</button>
-      <span class="sub" id="breakEditHint"></span>
-    </div>
     <div id="artSentences"></div>
     <h2 style="margin-top:14px">重要語彙</h2>
     <div id="artVocab"></div>
-    <div class="row" style="margin-top:14px;position:sticky;bottom:0;background:var(--card);padding:8px 0">
-      <button class="primary" onclick="finishStudy()">✅ 勉強完了</button>
-      <button class="ghost" id="btnPush" onclick="pushFails()" title="ミスをNotionへ反映">⬆️ Notion</button>
-      <span class="badge" id="pendingBadge"></span>
+    <div style="position:sticky;bottom:0;background:var(--card);padding:8px 0;border-top:1px solid #eee">
+      <div class="row" style="margin:0 0 6px">
+        <button class="small tab" id="btnBreakEdit" onclick="toggleBreakEdit()">✂️ 区切り編集</button>
+        <span class="sub" id="breakEditHint"></span>
+      </div>
+      <div class="row" style="margin:0">
+        <button class="primary" onclick="finishStudy()">✅ 勉強完了</button>
+        <button class="ghost" id="btnPush" onclick="pushFails()" title="ミスをNotionへ反映">⬆️ Notion</button>
+        <span class="badge" id="pendingBadge"></span>
+      </div>
     </div>
   </div>
   <!-- ミス種類ポップアップ -->
@@ -766,7 +768,7 @@ async function openArticle(id) {
     curArticle = a;
     document.getElementById("artTitle").textContent = a.title;
     document.getElementById("articleDetail").style.display = "";
-    document.getElementById("articleList").style.display = "none";
+    document.getElementById("articleListCard").style.display = "none";
     renderArtSentences();
     renderArtVocab();
     updatePending();
@@ -776,7 +778,7 @@ async function openArticle(id) {
 
 function closeArticle() {
   document.getElementById("articleDetail").style.display = "none";
-  document.getElementById("articleList").style.display = "";
+  document.getElementById("articleListCard").style.display = "";
   playerClose();
   loadArticles();
 }
