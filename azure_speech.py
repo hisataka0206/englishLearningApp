@@ -103,30 +103,32 @@ def summarize(result, expected_pairs=None):
     # REST APIはスコアがNBest直下、SDKは PronunciationAssessment 配下。両対応。
     pa = top.get("PronunciationAssessment") or top
     words = []
+    # 句読点は拼音が無くAzureの単語列にも出てこないため、拼音のある文字だけで対応付ける
+    exp_py = [p[1] for p in (expected_pairs or []) if p[1]]
     exp_idx = 0
     for w in top.get("Words", []):
         wpa = w.get("PronunciationAssessment") or w
         phs = [p.get("Phoneme", "") for p in (w.get("Phonemes") or [])]
         said_tone = _tone_of(phs)
+        score = round(wpa.get("AccuracyScore", 0))
+        etype = wpa.get("ErrorType", "None")
         exp_tone = ""
-        if expected_pairs:
-            # 単語の文字数ぶん進め、その先頭文字の声調を期待値とする
+        if exp_py:
             word = w.get("Word", "")
-            first_py = ""
-            for i in range(max(1, len(word))):
-                if exp_idx < len(expected_pairs):
-                    if i == 0:
-                        first_py = expected_pairs[exp_idx][1] or ""
-                    exp_idx += 1
-            exp_tone = tone_from_pinyin(first_py)
+            n = sum(1 for ch in word if "一" <= ch <= "鿿" or ch.isdigit()) or 1
+            if exp_idx < len(exp_py):
+                exp_tone = tone_from_pinyin(exp_py[exp_idx])
+            exp_idx += n
+        # 発音されなかった語（Omission/スコア0）は声調判定の対象外
+        spoken = etype not in ("Omission", "Insertion") and score > 0
         words.append({
             "word": w.get("Word", ""),
-            "score": round(wpa.get("AccuracyScore", 0)),
-            "error": wpa.get("ErrorType", "None"),
+            "score": score,
+            "error": etype,
             "phonemes": phs,
             "tone_said": said_tone,
             "tone_expected": exp_tone,
-            "tone_error": bool(said_tone and exp_tone and said_tone != exp_tone),
+            "tone_error": bool(spoken and said_tone and exp_tone and said_tone != exp_tone),
         })
     return {
         "ok": True,
