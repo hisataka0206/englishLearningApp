@@ -103,32 +103,23 @@ def summarize(result, expected_pairs=None):
     # REST APIはスコアがNBest直下、SDKは PronunciationAssessment 配下。両対応。
     pa = top.get("PronunciationAssessment") or top
     words = []
-    # 句読点は拼音が無くAzureの単語列にも出てこないため、拼音のある文字だけで対応付ける
-    exp_py = [p[1] for p in (expected_pairs or []) if p[1]]
-    exp_idx = 0
     for w in top.get("Words", []):
         wpa = w.get("PronunciationAssessment") or w
-        phs = [p.get("Phoneme", "") for p in (w.get("Phonemes") or [])]
-        said_tone = _tone_of(phs)
+        # 音素（中国語は音節＋声調, 英語は個々の音）ごとのスコア
+        phs = [[p.get("Phoneme", ""), round(p.get("AccuracyScore", 0))]
+               for p in (w.get("Phonemes") or [])]
         score = round(wpa.get("AccuracyScore", 0))
         etype = wpa.get("ErrorType", "None")
-        exp_tone = ""
-        if exp_py:
-            word = w.get("Word", "")
-            n = sum(1 for ch in word if "一" <= ch <= "鿿" or ch.isdigit()) or 1
-            if exp_idx < len(exp_py):
-                exp_tone = tone_from_pinyin(exp_py[exp_idx])
-            exp_idx += n
-        # 発音されなかった語（Omission/スコア0）は声調判定の対象外
-        spoken = etype not in ("Omission", "Insertion") and score > 0
+        # いちばんスコアが低い音＝弱点（正解の読みなので「本来こう読む」も分かる）
+        worst = min(phs, key=lambda x: x[1]) if phs else None
         words.append({
             "word": w.get("Word", ""),
             "score": score,
             "error": etype,
-            "phonemes": phs,
-            "tone_said": said_tone,
-            "tone_expected": exp_tone,
-            "tone_error": bool(spoken and said_tone and exp_tone and said_tone != exp_tone),
+            "phonemes": [p[0] for p in phs],
+            "phoneme_scores": phs,
+            "worst": {"name": worst[0], "score": worst[1]} if worst else None,
+            "worst_tone": _tone_of([worst[0]]) if worst else "",
         })
     return {
         "ok": True,

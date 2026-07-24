@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.33.1"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.34.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -451,8 +451,9 @@ def save_assessment(lang, text, data, source=""):
             "id": uuid.uuid4().hex, "time": now(), "lang": lang, "text": text,
             "source": source, "scores": data.get("scores", {}),
             "words": [{"w": w["word"], "s": w["score"], "e": w["error"],
-                       "t": bool(w.get("tone_error")),
-                       "ts": w.get("tone_said", ""), "te": w.get("tone_expected", "")}
+                       "wp": (w.get("worst") or {}).get("name", ""),
+                       "ws": (w.get("worst") or {}).get("score"),
+                       "ph": w.get("phoneme_scores", [])}
                       for w in data.get("words", [])],
         }
         items.append(rec)
@@ -467,7 +468,7 @@ def list_assessments(lang="zh", limit=50):
     for a in reversed(items[-limit:]):
         sc = a.get("scores", {})
         ng = [w["w"] for w in a.get("words", [])
-              if w.get("e") not in ("None", "Omission") or w.get("s", 100) < 60 or w.get("t")]
+              if w.get("e") not in ("None", "Omission") or w.get("s", 100) < 60]
         out.append({"id": a["id"], "time": a["time"][:16], "text": a["text"],
                     "pron": sc.get("pron"), "accuracy": sc.get("accuracy"),
                     "fluency": sc.get("fluency"), "completeness": sc.get("completeness"),
@@ -485,27 +486,35 @@ def weak_words(lang="zh", limit=60):
             if w.get("e") == "Omission":
                 continue  # 読まれなかった語は対象外
             key = w["w"]
-            s = stat.setdefault(key, {"word": key, "tries": 0, "miss": 0, "tone": 0,
-                                      "sum": 0, "last": "", "last_score": None})
+            s = stat.setdefault(key, {"word": key, "tries": 0, "miss": 0,
+                                      "sum": 0, "last": "", "last_score": None,
+                                      "weak_ph": {}})
             s["tries"] += 1
             s["sum"] += w.get("s", 0)
             if w.get("e") not in ("None",) or w.get("s", 100) < 60:
                 s["miss"] += 1
-            if w.get("t"):
-                s["tone"] += 1
+                # 苦手な音（いちばん低い音素）を数える
+                if w.get("wp"):
+                    d = s["weak_ph"].setdefault(w["wp"], {"n": 0, "sum": 0})
+                    d["n"] += 1
+                    d["sum"] += w.get("ws") or 0
             s["last"] = a["time"][:10]
             s["last_score"] = w.get("s")
     out = []
     for s in stat.values():
-        if s["tries"] < 1:
+        if s["tries"] < 1 or not s["miss"]:
             continue
         s["avg"] = round(s["sum"] / s["tries"])
         s["rate"] = round(100 * s["miss"] / s["tries"])
         del s["sum"]
-        if s["miss"] or s["tone"]:
-            if lang == "zh":  # 文字の上に拼音を出すための対応表
-                s["pairs"] = to_pinyin_pairs(s["word"])
-            out.append(s)
+        # 最も多かった苦手な音（正解の読み）＋その平均点
+        wp = sorted(s.pop("weak_ph").items(), key=lambda kv: -kv[1]["n"])
+        if wp:
+            name, d = wp[0]
+            s["weak"] = {"name": name, "score": round(d["sum"] / d["n"]), "n": d["n"]}
+        if lang == "zh":  # 文字の上に拼音を出すための対応表
+            s["pairs"] = to_pinyin_pairs(s["word"])
+        out.append(s)
     out.sort(key=lambda x: (-x["miss"], x["avg"]))
     return out[:limit], None
 

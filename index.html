@@ -63,14 +63,8 @@
   .fbtn.rm { background:#fdecec; color:var(--ng); }
   #btnRec.recording { background:var(--ng); color:#fff; }
   ruby rt { font-size:.55em; color:var(--accent); }
-  .weak { padding:10px 4px; border-bottom:1px solid #f0f1f5; }
-  .weak:last-child { border-bottom:0; }
-  .wtop { display:flex; align-items:center; gap:8px; }
-  .wword { font-size:22px; line-height:1.5; }
-  .wstats { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
-  .wstats span { background:#f5f6fa; border-radius:8px; padding:3px 8px; font-size:13px; }
-  .wstats i { color:var(--muted); font-style:normal; margin-right:4px; font-size:11px; }
-  .wstats b { font-weight:700; }
+  .wword { font-size:20px; line-height:1.6; }
+  .wtbl td { vertical-align:middle; }
   .jatoggle { margin-top:6px; }
   .jatoggle summary { font-size:13px; color:var(--accent); cursor:pointer; list-style:none; display:inline-block; padding:2px 8px; background:#eef1f8; border-radius:8px; }
   .jatoggle summary::-webkit-details-marker { display:none; }
@@ -830,24 +824,22 @@ async function loadRecord() {
 }
 
 function weakTable(list) {
-  let h = "";
+  let h = `<table class="htable wtbl"><tr>
+    <th>語</th><th>苦手な音</th><th>平均</th><th>ミス</th><th>最終</th></tr>`;
   list.forEach(w => {
     const label = w.pairs ? rubyHTML(w.pairs, w.word) : esc(w.word);
-    h += `<div class="weak">
-      <div class="wtop">
-        <span class="wword">${label}</span>
-        <button class="icon" onclick="speak('${w.word.replace(/'/g, "\\'")}')">🔊</button>
-      </div>
-      <div class="wstats">
-        <span><i>ミス率</i><b style="color:${w.rate >= 50 ? "var(--ng)" : "inherit"}">${w.rate}%</b></span>
-        <span><i>ミス回数</i><b>${w.miss} / ${w.tries}</b></span>
-        <span><i>平均点</i><b style="color:${scoreColor(w.avg)}">${w.avg}</b></span>
-        ${w.tone ? `<span><i>声調ミス</i><b style="color:var(--ng)">${w.tone}</b></span>` : ""}
-        <span><i>最終</i><b>${w.last}</b></span>
-      </div>
-    </div>`;
+    const weak = w.weak
+      ? `<b>${esc(w.weak.name)}</b> <span style="color:${scoreColor(w.weak.score)}">${w.weak.score}</span>`
+      : "-";
+    h += `<tr>
+      <td><span class="wword">${label}</span>
+        <button class="icon" onclick="speak('${w.word.replace(/'/g, "\\'")}')">🔊</button></td>
+      <td>${weak}</td>
+      <td style="color:${scoreColor(w.avg)};font-weight:700">${w.avg}</td>
+      <td class="sub">${w.miss}/${w.tries}</td>
+      <td class="sub" style="white-space:nowrap">${(w.last || "").slice(5)}</td></tr>`;
   });
-  return h;
+  return h + "</table>";
 }
 
 function histTable(list) {
@@ -1215,15 +1207,15 @@ function renderAssess(d) {
   d.words.forEach((w, i) => {
     const miss = w.error === "Omission";
     const bad = (w.error !== "None" && !miss) || (w.score < 60 && !miss);
-    const tone = w.tone_error;
-    const bg = miss ? "#eef1f8" : (bad || tone ? "#fdecec" : "#eaf7ef");
+    const bg = miss ? "#eef1f8" : (bad ? "#fdecec" : "#eaf7ef");
     const col = miss ? "var(--muted)" : scoreColor(w.score);
     h += `<span class="aw" data-i="${i}" style="padding:3px 7px;border-radius:8px;font-size:16px;cursor:pointer;
-      background:${bg};color:${col}">${esc(w.word)}${tone ? '<sup style="font-size:10px">声調</sup>' : ""}</span>`;
+      background:${bg};color:${col}">${esc(w.word)}</span>`;
   });
   h += `</div>`;
-  const wrong = d.words.filter(w => w.error !== "Omission" && (w.error !== "None" || w.score < 60 || w.tone_error));
-  if (wrong.length) h += `<div class="sub" style="margin-top:4px">直したい: ${wrong.map(w => esc(w.word) + (w.tone_error ? "（声調）" : "")).join("、")}</div>`;
+  const wrong = d.words.filter(w => w.error !== "Omission" && (w.error !== "None" || w.score < 60));
+  if (wrong.length) h += `<div class="sub" style="margin-top:4px">直したい: ${wrong.map(w =>
+      esc(w.word) + (w.worst ? `（${esc(w.worst.name)}）` : "")).join("、")}</div>`;
   else if (sc.completeness >= 50) h += `<div class="sub" style="margin-top:4px">よくできました！</div>`;
   box.innerHTML = h;
   lastAssess = d;
@@ -1255,8 +1247,11 @@ function showWordDetail(i) {
          : "🟥 赤＝お手本と違って聞こえます（60点未満）\n";
     if (w.error === "Mispronunciation") msg += "\n判定: 発音まちがい\n";
     if (w.error === "Insertion") msg += "\n判定: 余分な音が入っています\n";
-    if (w.tone_error) msg += `\n声調ちがい: 本来は${w.tone_expected}声ですが、${w.tone_said}声で発音しています\n`;
-    if (w.phonemes && w.phonemes.length) msg += `\n発音記号: ${w.phonemes.join(" ")}`;
+    if (w.phoneme_scores && w.phoneme_scores.length) {
+      msg += "\n音ごとの点数（正しい読み）:\n";
+      w.phoneme_scores.forEach(p => { msg += `  ${p[0]} … ${p[1]}点\n`; });
+      if (w.worst) msg += `\nいちばん弱い音: ${w.worst.name}（${w.worst.score}点）`;
+    }
   }
   alert(msg);
 }
