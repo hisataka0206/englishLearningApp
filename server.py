@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.29.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.30.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -742,6 +742,23 @@ def _ensure_jieba():
         return False
 
 
+def to_wav16k(audio_bytes):
+    """webm/opus等を16kHz mono WAVへ変換（ffmpegがあれば）。失敗時はNone。"""
+    import shutil
+    import subprocess
+    if not shutil.which("ffmpeg"):
+        return None
+    try:
+        p = subprocess.run(
+            ["ffmpeg", "-v", "error", "-i", "pipe:0", "-ac", "1", "-ar", "16000",
+             "-f", "wav", "pipe:1"],
+            input=audio_bytes, capture_output=True, timeout=60)
+        return p.stdout if p.returncode == 0 and p.stdout else None
+    except Exception as e:
+        print(f"[audio] convert failed: {e}")
+        return None
+
+
 def segment_zh(text):
     """中国語を単語（词）に分割。jieba不可なら空リスト（クライアントは句読点区切りに）。"""
     if not text or not _ensure_jieba():
@@ -896,6 +913,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._fail("Azure未設定（config.jsonのazure.keyを設定してください）")
         locale = "zh-CN" if lang == "zh" else "en-US"
         ctype = self.headers.get("X-Audio-Type") or "audio/webm; codecs=opus"
+        # AzureはWAV(PCM16k)で最も正確。WAV以外はffmpegがあれば変換して送る
+        if "wav" not in ctype.lower():
+            conv = to_wav16k(audio)
+            if conv:
+                audio, ctype = conv, "audio/wav; codecs=audio/pcm; samplerate=16000"
         raw, err = AZURE.assess(audio, text, locale, ctype)
         if err:
             return self._fail(err)

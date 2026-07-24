@@ -1003,11 +1003,17 @@ async function toggleRecord() {
     recChunks = [];
     mediaRec = new MediaRecorder(stream);
     mediaRec.ondataavailable = e => { if (e.data.size) recChunks.push(e.data); };
-    mediaRec.onstop = () => {
+    mediaRec.onstop = async () => {
       stream.getTracks().forEach(t => t.stop());
       const blob = new Blob(recChunks, { type: mediaRec.mimeType || "audio/webm" });
-      setRecording(blob, text);   // 自分の録音を聴けるように保持
-      sendAssess(blob, text);
+      setRecording(blob, text);   // 再生用は元のまま保持
+      // Azureはwebm/opusを正しく解析できないため、16kHz mono WAVに変換して送る
+      try {
+        const wav = await blobToWav16k(blob);
+        sendAssess(wav, text, "audio/wav; codecs=audio/pcm; samplerate=16000");
+      } catch(e) {
+        sendAssess(blob, text, blob.type || "audio/webm; codecs=opus");
+      }
     };
     mediaRec.start();
     recStart = Date.now();
@@ -1056,14 +1062,42 @@ function playModel() {   // お手本（音声合成）を同じ文で再生
   speak(recText);
 }
 
-async function sendAssess(blob, text) {
+// 録音（webm/opus等）を 16kHz mono の WAV に変換する
+async function blobToWav16k(blob) {
+  const buf = await blob.arrayBuffer();
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const decoded = await new AC().decodeAudioData(buf);
+  const rate = 16000;
+  const off = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(
+    1, Math.ceil(decoded.duration * rate), rate);
+  const src = off.createBufferSource();
+  src.buffer = decoded;
+  src.connect(off.destination);
+  src.start();
+  const rendered = await off.startRendering();
+  const pcm = rendered.getChannelData(0);
+  const bytes = new DataView(new ArrayBuffer(44 + pcm.length * 2));
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) bytes.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, "RIFF"); bytes.setUint32(4, 36 + pcm.length * 2, true); w(8, "WAVEfmt ");
+  bytes.setUint32(16, 16, true); bytes.setUint16(20, 1, true); bytes.setUint16(22, 1, true);
+  bytes.setUint32(24, rate, true); bytes.setUint32(28, rate * 2, true);
+  bytes.setUint16(32, 2, true); bytes.setUint16(34, 16, true);
+  w(36, "data"); bytes.setUint32(40, pcm.length * 2, true);
+  for (let i = 0; i < pcm.length; i++) {
+    const v = Math.max(-1, Math.min(1, pcm[i]));
+    bytes.setInt16(44 + i * 2, v < 0 ? v * 0x8000 : v * 0x7FFF, true);
+  }
+  return new Blob([bytes.buffer], { type: "audio/wav" });
+}
+
+async function sendAssess(blob, text, ctype) {
   const box = document.getElementById("assessBox");
   box.style.display = "";
   box.innerHTML = '<span class="sub">発音を判定中…</span>';
   try {
     const r = await fetch(`/api/assess?lang=${lang}&text=${encodeURIComponent(text)}`, {
       method: "POST",
-      headers: { "Content-Type": "application/octet-stream", "X-Audio-Type": blob.type || "audio/webm; codecs=opus" },
+      headers: { "Content-Type": "application/octet-stream", "X-Audio-Type": ctype || blob.type || "audio/wav" },
       body: blob,
     });
     const j = await r.json();
