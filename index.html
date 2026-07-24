@@ -53,6 +53,10 @@
   .cgap:hover { background:#cdd7f5; }
   .fbtn { display:inline-block; margin:2px; padding:8px 10px; border:0; border-radius:8px; background:#eef1f8; font-size:14px; cursor:pointer; }
   .fbtn.rm { background:#fdecec; color:var(--ng); }
+  .jatoggle { margin-top:6px; }
+  .jatoggle summary { font-size:13px; color:var(--accent); cursor:pointer; list-style:none; display:inline-block; padding:2px 8px; background:#eef1f8; border-radius:8px; }
+  .jatoggle summary::-webkit-details-marker { display:none; }
+  .jatoggle[open] summary { color:var(--muted); background:transparent; padding-left:0; }
   .badge { background:#fdecec; color:var(--ng); border-radius:8px; font-size:12px; padding:2px 8px; }
   .msg { font-size:13px; margin-top:8px; min-height:16px; }
   .msg.ok { color:var(--ok); } .msg.ng { color:var(--ng); }
@@ -142,7 +146,7 @@
     <h2><button class="small ghost" onclick="closeArticle()">← 記事一覧</button>
       <span id="artTitle"></span></h2>
     <div style="font-size:12px;color:var(--muted);background:#f5f6fa;border-radius:8px;padding:6px 8px;margin-bottom:8px">
-      文字を<b>タップ=発音</b>／<b>長押し（PCは右クリック）=ミス記録</b>。文字のすき間をタップで<b>区切り</b>。▶で節ごとに発音。
+      文字を<b>タップ=発音</b>／<b>長押し（PCは右クリック）=ミス記録</b>。文字のすき間をタップで<b>区切り</b>。▶で節ごとに発音。日本語は「日本語を見る」で表示。
     </div>
     <div id="artSentences"></div>
     <h2 style="margin-top:14px">重要語彙</h2>
@@ -777,20 +781,20 @@ function renderArtSentences() {
     let grid = '<div class="cgrid">';
     pairs.forEach((p, ci) => {
       const [ch, py] = p;
-      const isHan = /[一-鿿]/.test(ch);
+      const selectable = !!py;  // 拼音がある文字（漢字・数字）は発音・ミス記録の対象
       // 文字の前の区切りギャップ（先頭以外）
       if (ci > 0) grid += `<span class="cgap${breaks.has(ci - 1) ? " brk" : ""}" onclick="toggleBreak(${s.idx},${ci - 1})"></span>`;
       const lb = fmap[failKey(s.idx, ci)];
       const cls = "cchar" + (lb ? " failed" : "");
       const safe = ch.replace(/'/g, "\\'");
       grid += `<span class="${cls}" data-idx="${s.idx}" data-ci="${ci}" data-ch="${esc(ch)}" data-py="${esc(py)}"
-        ${isHan ? `onclick="charTap('${safe}')" oncontextmenu="return charMenu(event,${s.idx},${ci})"` : ""}>
+        ${selectable ? `onclick="charTap('${safe}')" oncontextmenu="return charMenu(event,${s.idx},${ci})"` : ""}>
         <span class="py">${esc(py)}</span><span class="hz">${esc(ch)}</span>${lb ? `<span class="lb">${lb}</span>` : ""}</span>`;
     });
     grid += "</div>";
     d.innerHTML = grid +
-      (s.ja ? `<div class="sub">${esc(s.ja)}</div>` : "") +
-      `<button class="small ghost" onclick='playArtSentence(${s.idx})'>▶ 節ごとに発音</button>`;
+      `<button class="small ghost" onclick='playArtSentence(${s.idx})'>▶ 節ごとに発音</button>` +
+      (s.ja ? `<details class="jatoggle"><summary>日本語を見る</summary><div class="sub" style="margin-top:4px">${esc(s.ja)}</div></details>` : "");
     box.appendChild(d);
     // 長押し（モバイル）でミス記録メニュー
     d.querySelectorAll(".cchar").forEach(el => attachLongPress(el));

@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.18.1"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.19.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -416,6 +416,9 @@ def articles_list():
 def articles_get(article_id):
     for a in _articles():
         if a["id"] == article_id:
+            # 拼音ペアは常に最新ロジックで再計算（数字の拼音などを反映）
+            for s in a.get("sentences", []):
+                s["pairs"] = to_pinyin_pairs(s["zh"])
             return a, None
     return None, "article not found"
 
@@ -664,9 +667,13 @@ def to_pinyin(text):
     return " ".join(lazy_pinyin(text, style=Style.TONE))
 
 
+DIGIT_PY = {"0": "líng", "1": "yī", "2": "èr", "3": "sān", "4": "sì",
+            "5": "wǔ", "6": "liù", "7": "qī", "8": "bā", "9": "jiǔ"}
+
+
 def to_pinyin_pairs(text):
     """各文字を [文字, その字の拼音] に対応付ける（1文字ずつ表示・選択用）。
-    漢字以外（句読点・数字・英字・空白）は拼音を空にする。"""
+    漢字は拼音、算用数字は1文字ずつの読み（2→èr 等）、句読点・英字・空白は空。"""
     if not text:
         return []
     ok = _ensure_pypinyin()
@@ -676,6 +683,8 @@ def to_pinyin_pairs(text):
         if ok and "一" <= ch <= "鿿":
             py = pinyin(ch, style=Style.TONE, errors="default")
             pairs.append([ch, py[0][0] if py and py[0] else ""])
+        elif ch in DIGIT_PY:
+            pairs.append([ch, DIGIT_PY[ch]])
         else:
             pairs.append([ch, ""])
     return pairs
