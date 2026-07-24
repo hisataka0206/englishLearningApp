@@ -116,9 +116,10 @@
     <h2 id="transHead">英訳（タップで編集可。「/」を入れるとその位置で発音を区切ります）</h2>
     <div id="english" contenteditable="true" oninput="englishEdited(this)"></div>
     <div id="pinyin" style="color:var(--muted);font-size:13px;margin-top:2px"></div>
+    <div id="breakGrid" style="display:none"></div>
     <div class="row">
-      <button class="ghost" onclick="playerLoad(document.getElementById('english').textContent)" title="発音">🔊</button>
-      <button class="ghost" onmousedown="event.preventDefault()" ontouchend="event.preventDefault();insertSlash()" onclick="insertSlash()" title="区切りを挿入">／</button>
+      <button class="ghost" onclick="playerLoad(current.marked || current.english)" title="発音">🔊</button>
+      <button class="small tab" id="btnMainBreak" onclick="toggleMainBreakEdit()">✂️ 区切り編集</button>
       <button class="primary" id="btnSave" onclick="saveSentence()" title="保存">💾</button>
     </div>
     <div id="kwBox" style="margin-top:10px"></div>
@@ -242,6 +243,7 @@ function setLang(l) {
   document.getElementById("transHead").textContent = L().transHead;
   document.getElementById("tab_sent").textContent = L().sentTab;
   document.getElementById("resultCard").style.display = "none";  // 前の言語の結果をクリア
+  resetMainBreak();
   playerClose();
   loadHistory();  // 履歴もその言語のものに切替
 }
@@ -405,9 +407,89 @@ function englishEdited(el) {
   // 英訳の手編集を反映：以後の発音・保存・単語登録はこの内容を使う
   current.marked = el.textContent.replace(/\s+/g, " ").trim();  // 区切り「/」込み
   current.english = current.marked.replace(/\s*[/|｜／]+\s*/g, " ").replace(/\s+/g, " ").trim();
+  current._breaks = null;  // テキストが変わったので区切りは再導出
   document.getElementById("btnSave").disabled = false;  // 編集したら保存可能に（呼び出し中は上書き）
   playerSync();  // 区切りの変更を練習ウィンドウに即反映
   refreshPinyin();
+}
+
+// ---- 区切り編集モード（自分の文側。記事と同じすき間タップ方式） ----
+let mainBreakMode = false;
+
+function resetMainBreak() {
+  mainBreakMode = false; current._breaks = null;
+  const b = document.getElementById("btnMainBreak");
+  if (b) b.classList.remove("active");
+  document.getElementById("english").style.display = "";
+  document.getElementById("pinyin").style.display = "";
+  document.getElementById("breakGrid").style.display = "none";
+}
+
+function toggleMainBreakEdit() {
+  mainBreakMode = !mainBreakMode;
+  document.getElementById("btnMainBreak").classList.toggle("active", mainBreakMode);
+  document.getElementById("english").style.display = mainBreakMode ? "none" : "";
+  document.getElementById("pinyin").style.display = mainBreakMode ? "none" : "";
+  document.getElementById("breakGrid").style.display = mainBreakMode ? "" : "none";
+  if (mainBreakMode) {
+    if (!current._breaks) current._breaks = deriveMainBreaks();
+    renderMainBreakGrid();
+    playerClose();  // 区切り編集に集中
+  } else {
+    current.marked = buildMainMarked();
+    playerSync();
+  }
+}
+
+function mainTokens() {
+  const t = current.english || "";
+  return lang === "zh" ? Array.from(t) : t.split(/\s+/).filter(Boolean);
+}
+
+function deriveMainBreaks() {
+  // current.marked の「/」位置をトークンindexの集合に変換
+  const marked = current.marked || current.english || "";
+  const segs = marked.split(/\s*[/|｜／]\s*/).filter(Boolean);
+  const br = new Set(); let idx = 0;
+  for (let s = 0; s < segs.length - 1; s++) {
+    const toks = lang === "zh"
+      ? Array.from(segs[s].replace(/\s/g, "")) : segs[s].split(/\s+/).filter(Boolean);
+    idx += toks.length; br.add(idx - 1);
+  }
+  return br;
+}
+
+function buildMainMarked() {
+  const toks = mainTokens(); let out = "";
+  toks.forEach((tk, i) => {
+    out += tk + (lang === "zh" ? "" : " ");
+    if (current._breaks && current._breaks.has(i)) out += "/ ";
+  });
+  return out.replace(/\s+/g, " ").trim();
+}
+
+async function renderMainBreakGrid() {
+  const box = document.getElementById("breakGrid");
+  const toks = mainTokens();
+  let pairs = null;
+  if (lang === "zh") {
+    try { const d = await api("/api/pinyin", { texts: [current.english] }); pairs = d.pairs[0]; } catch(e) {}
+  }
+  let h = '<div class="cgrid editbreaks">';
+  toks.forEach((tk, i) => {
+    if (i > 0) h += `<span class="cgap${current._breaks.has(i - 1) ? " brk" : ""}" onclick="toggleMainBreak(${i - 1})"></span>`;
+    const py = (pairs && pairs[i]) ? pairs[i][1] : "";
+    const sz = lang === "zh" ? "" : ' style="font-size:16px;padding:0 3px"';
+    h += `<span class="cchar"><span class="py">${esc(py)}</span><span class="hz"${sz}>${esc(tk)}</span></span>`;
+  });
+  box.innerHTML = h + "</div>";
+}
+
+function toggleMainBreak(pos) {
+  if (current._breaks.has(pos)) current._breaks.delete(pos); else current._breaks.add(pos);
+  current.marked = buildMainMarked();
+  renderMainBreakGrid();
+  playerSync();
 }
 
 let pinyinTimer = null;
@@ -525,6 +607,7 @@ async function doTranslate() {
     const model = document.getElementById("model").value;
     const d = await api("/api/translate", { japanese: ja, model, lang });
     current = { japanese: ja, english: d.english, marked: d.english, keywords: [], pageId: null };
+    resetMainBreak();
     document.getElementById("resultCard").style.display = "";
     document.getElementById("english").textContent = d.english;
     document.getElementById("pinyin").textContent = d.pinyin || "";
@@ -593,6 +676,7 @@ async function study(id) {
   document.getElementById("ja").value = s.japanese;
   current = { japanese: s.japanese, english: s.english,
               marked: s.marked || s.english, keywords: [], pageId: id };
+  resetMainBreak();
   document.getElementById("resultCard").style.display = "";
   document.getElementById("english").textContent = current.marked;
   document.getElementById("pinyin").textContent = s.pinyin || "";
