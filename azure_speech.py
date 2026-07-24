@@ -81,9 +81,10 @@ def tone_from_pinyin(py):
 
 
 def _tone_of(phonemes):
-    """SAPI音素列から声調番号を拾う（例: ['h','ao3'] -> '3'）"""
+    """SAPI音素列から声調番号を拾う（例: ['h','ao3'] や ['wo 3'] -> '3'）"""
     for p in phonemes:
-        m = TONE_RE.fullmatch(str(p).strip())
+        s = re.sub(r"\s+", "", str(p))
+        m = TONE_RE.fullmatch(s) or TONE_RE.search(s)
         if m:
             return m.group(2)
     return ""
@@ -99,11 +100,12 @@ def summarize(result, expected_pairs=None):
     if not nbest:
         return {"ok": False, "error": "認識できませんでした（もう一度録音してください）"}
     top = nbest[0]
-    pa = top.get("PronunciationAssessment", {})
+    # REST APIはスコアがNBest直下、SDKは PronunciationAssessment 配下。両対応。
+    pa = top.get("PronunciationAssessment") or top
     words = []
     exp_idx = 0
     for w in top.get("Words", []):
-        wpa = w.get("PronunciationAssessment", {})
+        wpa = w.get("PronunciationAssessment") or w
         phs = [p.get("Phoneme", "") for p in (w.get("Phonemes") or [])]
         said_tone = _tone_of(phs)
         exp_tone = ""
