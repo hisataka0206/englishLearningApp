@@ -58,7 +58,7 @@ def parse_comments(xml):
     """[(block_id_nodash, syllable, label, datetime)] を返す。"""
     res = []
     for dm in re.finditer(r'<discussion\s+id="discussion://[^/]+/([0-9a-f-]+)/[^"]+"[^>]*?text-context="([^"]*)"[^>]*>(.*?)</discussion>', xml, re.S):
-        block = dm.group(1).replace("-", "")
+        block = dm.group(1).replace("-", "")[:8]  # 先頭8文字で照合
         syl = dm.group(2)
         cm = re.search(r'<comment[^>]*?datetime="([^"]*)"[^>]*>([^<]*)</comment>', dm.group(3))
         dt = cm.group(1) if cm else ""
@@ -81,7 +81,7 @@ def main():
         t = btext(b)
         if t.startswith("拼音："):
             pin_idx += 1
-            bid = b["id"].replace("-", "")
+            bid = b["id"].replace("-", "")[:8]  # 先頭8文字で照合
             b2s[bid] = pin_idx
             b2p[bid] = t[len("拼音："):]
 
@@ -109,8 +109,15 @@ def main():
         fl_sorted = sorted(fl, key=lambda x: x[2])  # datetime昇順＝読み順
         pin_re = re.compile(r"[a-zāáǎàēéěèīíǐìōóǒòūúǔùüǘǚǜ]", re.I)
 
-        def find_ranges(target, is_pin):
-            """target(拼音連結 or 文字列)に一致する連続文字範囲[start,end)を全て返す。"""
+        import unicodedata
+        def detone(s):
+            return "".join(c for c in unicodedata.normalize("NFD", s)
+                           if unicodedata.category(c) != "Mn")
+
+        def find_ranges(target, is_pin, loose=False):
+            """target(拼音連結 or 文字列)に一致する連続文字範囲[start,end)を全て返す。
+            loose=Trueで声調を無視（多音字の声調差を救済）。"""
+            tg = detone(target) if loose else target
             out = []
             for start in range(len(prs)):
                 acc = ""; end = start
@@ -119,10 +126,10 @@ def main():
                     unit = (py if is_pin else ch)
                     if is_pin and not py:
                         break
-                    acc += unit; end += 1
-                    if acc == target:
+                    acc += (detone(unit) if loose else unit); end += 1
+                    if acc == tg:
                         out.append((start, end)); break
-                    if not target.startswith(acc):
+                    if not tg.startswith(acc):
                         break
             return out
 
@@ -130,6 +137,8 @@ def main():
         for syl, lab, dt in fl_sorted:
             target = syl.replace(" ", ""); is_pin = bool(pin_re.search(target))
             allr = find_ranges(target, is_pin)  # 文中の全候補
+            if not allr and is_pin:
+                allr = find_ranges(target, is_pin, loose=True)  # 声調無視で救済
             avail = [r for r in allr if not any(i in used for i in range(r[0], r[1]))]
             if len(allr) == 1:              # 文中で一意→順序に関わらず確定
                 pick = allr[0]
