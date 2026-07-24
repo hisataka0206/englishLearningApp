@@ -51,9 +51,14 @@
   .cchar .hz { font-size:22px; line-height:1.25; }
   .cchar.failed .hz { color:var(--ng); }
   .cchar.failed .lb { font-size:9px; color:var(--ng); line-height:1; }
-  .cgap { width:4px; align-self:stretch; cursor:pointer; border-radius:3px; margin:0 1px; }
+  .cgap { width:3px; align-self:stretch; border-radius:3px; margin:0 1px; }
   .cgap.brk { width:3px; background:var(--accent); }
-  .cgap:hover { background:#cdd7f5; }
+  /* 区切り編集モード：文字間のタップ領域を大きくして押しやすく */
+  .cgrid.editbreaks .cgap { width:22px; cursor:pointer; background:#eef1f8; position:relative; }
+  .cgrid.editbreaks .cgap::after { content:"｜"; color:#b8c0d8; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); }
+  .cgrid.editbreaks .cgap.brk { background:var(--accent); }
+  .cgrid.editbreaks .cgap.brk::after { content:"✂"; color:#fff; font-size:11px; }
+  .cgrid.editbreaks .cchar { opacity:.75; }
   .fbtn { display:inline-block; margin:2px; padding:8px 10px; border:0; border-radius:8px; background:#eef1f8; font-size:14px; cursor:pointer; }
   .fbtn.rm { background:#fdecec; color:var(--ng); }
   ruby rt { font-size:.55em; color:var(--accent); }
@@ -151,6 +156,10 @@
     <h2><button class="small ghost" onclick="closeArticle()">←</button>
       <span id="artTitle"></span>
       <button class="small ghost" onclick="showArtHelp()" title="使い方" style="float:right">❓</button></h2>
+    <div class="row" style="margin-top:0">
+      <button class="small tab" id="btnBreakEdit" onclick="toggleBreakEdit()">✂️ 区切り編集</button>
+      <span class="sub" id="breakEditHint"></span>
+    </div>
     <div id="artSentences"></div>
     <h2 style="margin-top:14px">重要語彙</h2>
     <div id="artVocab"></div>
@@ -749,6 +758,9 @@ async function refreshArticles() {
 
 async function openArticle(id) {
   lang = "zh";  // 記事は中国語：発音・拼音を中国語モードに
+  breakEditMode = false;
+  document.getElementById("btnBreakEdit").classList.remove("active");
+  document.getElementById("breakEditHint").textContent = "";
   try {
     const a = await api("/api/article?id=" + id);
     curArticle = a;
@@ -781,12 +793,12 @@ function renderArtSentences() {
     d.className = "asent";
     const pairs = s.pairs || (s.zh || "").split("").map(c => [c, ""]);
     const breaks = new Set(s.breaks || []);
-    let grid = '<div class="cgrid">';
+    let grid = `<div class="cgrid${breakEditMode ? " editbreaks" : ""}">`;
     pairs.forEach((p, ci) => {
       const [ch, py] = p;
-      const selectable = !!py;  // 拼音がある文字（漢字・数字）は発音・ミス記録の対象
-      // 文字の前の区切りギャップ（先頭以外）
-      if (ci > 0) grid += `<span class="cgap${breaks.has(ci - 1) ? " brk" : ""}" onclick="toggleBreak(${s.idx},${ci - 1})"></span>`;
+      const selectable = !!py && !breakEditMode;  // 通常時のみ発音・ミス記録
+      // 文字の前の区切りギャップ（先頭以外）。編集モードのみタップ可
+      if (ci > 0) grid += `<span class="cgap${breaks.has(ci - 1) ? " brk" : ""}" ${breakEditMode ? `onclick="toggleBreak(${s.idx},${ci - 1})"` : ""}></span>`;
       const lb = fmap[failKey(s.idx, ci)];
       const cls = "cchar" + (lb ? " failed" : "");
       const safe = ch.replace(/'/g, "\\'");
@@ -814,6 +826,16 @@ function playArtSentence(idx) {
   playerLoad(marked);
 }
 
+let breakEditMode = false;
+function toggleBreakEdit() {
+  breakEditMode = !breakEditMode;
+  document.getElementById("btnBreakEdit").classList.toggle("active", breakEditMode);
+  document.getElementById("breakEditHint").textContent =
+    breakEditMode ? "文字の間（｜）をタップで区切り" : "";
+  if (breakEditMode) { playerClose(); }  // 発音より区切り編集を優先
+  renderArtSentences();
+}
+
 function toggleBreak(idx, pos) {
   const s = curArticle.sentences.find(x => x.idx === idx);
   s.breaks = s.breaks || [];
@@ -825,7 +847,7 @@ function toggleBreak(idx, pos) {
 
 let suppressTap = false;
 function showArtHelp() {
-  alert("文字をタップ＝発音\n長押し（PCは右クリック）＝ミス記録\n文字のすき間をタップ＝区切り\n▶＝節ごとに発音\n「日本語」＝訳を表示");
+  alert("文字をタップ＝発音\n長押し（PCは右クリック）＝ミス記録\n▶＝節ごとに発音\n「日本語」＝訳を表示\n\n区切りを変えるときは「✂️ 区切り編集」を押してから、文字の間（｜）をタップ");
 }
 
 function charTap(ch) { if (suppressTap) { suppressTap = false; return; } speak(ch); }  // タップ＝発音
