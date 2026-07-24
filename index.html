@@ -1124,10 +1124,9 @@ function renderAssess(d) {
   let h = `<div style="font-size:13px;margin-bottom:4px">
     総合 <b style="color:${scoreColor(sc.pron)}">${sc.pron}</b>
     <span class="sub">｜発音 ${sc.accuracy}／なめらかさ ${sc.fluency}／読めた割合 ${sc.completeness}%${sc.prosody ? "／抑揚 " + sc.prosody : ""}</span></div>`;
-  // 大半が読まれていない場合は録音の問題として案内（誤判定を防ぐ）
+  // 大半が読まれていない場合のみ短く警告
   if (sc.completeness < 50 || sc.fluency === 0) {
-    h += `<div class="msg ng" style="margin:0 0 4px">うまく録音できていないようです（${omitted}語が聞き取れず）。
-      マイクに近づいて、文をひと続きに読んでからもう一度お試しください。</div>`;
+    h += `<div class="msg ng" style="margin:0 0 4px">⚠️ ${omitted}語が聞き取れませんでした</div>`;
   }
   h += `<div style="display:flex;flex-wrap:wrap;gap:4px" id="assessWords">`;
   d.words.forEach((w, i) => {
@@ -1139,7 +1138,7 @@ function renderAssess(d) {
     h += `<span class="aw" data-i="${i}" style="padding:3px 7px;border-radius:8px;font-size:16px;cursor:pointer;
       background:${bg};color:${col}">${esc(w.word)}${tone ? '<sup style="font-size:10px">声調</sup>' : ""}</span>`;
   });
-  h += `</div><div class="sub" style="margin-top:3px;font-size:11px">単語を長押し（PCは右クリック）で詳しい説明</div>`;
+  h += `</div>`;
   const wrong = d.words.filter(w => w.error !== "Omission" && (w.error !== "None" || w.score < 60 || w.tone_error));
   if (wrong.length) h += `<div class="sub" style="margin-top:4px">直したい: ${wrong.map(w => esc(w.word) + (w.tone_error ? "（声調）" : "")).join("、")}</div>`;
   else if (sc.completeness >= 50) h += `<div class="sub" style="margin-top:4px">よくできました！</div>`;
