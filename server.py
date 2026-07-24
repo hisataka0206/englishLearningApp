@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.23.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.24.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -697,6 +697,43 @@ def count_hanzi(text):
     return sum(1 for ch in (text or "") if "一" <= ch <= "鿿")
 
 
+_jieba_tried = False
+
+
+def _ensure_jieba():
+    global _jieba_tried
+    try:
+        import jieba  # noqa: F401
+        return True
+    except ImportError:
+        if _jieba_tried:
+            return False
+        _jieba_tried = True
+        import subprocess
+        import sys
+        for args in (["-m", "pip", "install", "--user", "jieba"],
+                     ["-m", "pip", "install", "--break-system-packages", "jieba"]):
+            try:
+                subprocess.run([sys.executable] + args, capture_output=True, timeout=180)
+                import importlib
+                importlib.invalidate_caches()
+                import jieba  # noqa: F401
+                print("[jieba] installed")
+                return True
+            except Exception:
+                continue
+        print("[jieba] unavailable (中国語の単語分割は句読点区切りにフォールバック)")
+        return False
+
+
+def segment_zh(text):
+    """中国語を単語（词）に分割。jieba不可なら空リスト（クライアントは句読点区切りに）。"""
+    if not text or not _ensure_jieba():
+        return []
+    import jieba
+    return [w for w in jieba.lcut(text) if w.strip()]
+
+
 def _has_japanese(s):
     return bool(re.search(r"[぀-ヿ㐀-鿿]", s or ""))
 
@@ -891,7 +928,8 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/pinyin":
             texts = body.get("texts") or []
             data, err = {"pinyins": [to_pinyin(t) for t in texts],
-                         "pairs": [to_pinyin_pairs(t) for t in texts]}, None
+                         "pairs": [to_pinyin_pairs(t) for t in texts],
+                         "words": [segment_zh(t) for t in texts]}, None
         elif self.path == "/api/keywords":
             english = (body.get("english") or "").strip()
             if not english:

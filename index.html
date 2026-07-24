@@ -312,15 +312,35 @@ function autoSplit(text, mode) {
   return out.length ? out : [text];
 }
 
-function zhSplit(text, mode) {
-  // 中国語：句読点（，。！？、；：）で分割。文単位モードは 。！？ のみ
+let zhWordsMap = {};  // clean中文 → jieba単語配列（自動の単語区切り用）
+
+function zhPunct(text, mode) {
+  // 句読点区切り（フォールバック）。文単位は 。！？ のみ
   const re = mode === "sentence" ? /[^。！？]+[。！？]*/g : /[^，。！？、；：]+[，。！？、；：]*/g;
   return (text.match(re) || [text]).map(s => s.trim()).filter(Boolean);
 }
 
+function zhSplit(text, mode) {
+  const clean = text.replace(/[/|｜／\s]/g, "");
+  if (mode === "sentence") return zhPunct(clean, "sentence");
+  const words = zhWordsMap[clean];
+  if (!words || !words.length) return zhPunct(text, mode);  // jieba未取得→句読点
+  if (mode === "fine") {
+    // 単語（词）レベル：句読点は前の語に結合
+    const out = [];
+    words.forEach(w => {
+      if (/^[，。！？、；：,.!?%（）()]+$/.test(w) && out.length) out[out.length - 1] += w;
+      else out.push(w);
+    });
+    return out.length ? out : [text];
+  }
+  // ふつう：節（句読点）レベル
+  return zhPunct(clean, mode);
+}
+
 function splitPhrases(text, mode) {
   mode = mode || document.getElementById("splitMode").value;
-  // 「/」「|」は自動区切りへの追加の強制区切り（置き換えではない）
+  // 「/」の手動区切りは自動区切りへの追加
   const segments = text.split(/[/|｜／]+/).map(s => s.trim()).filter(Boolean);
   const out = [];
   const auto = lang === "zh" ? zhSplit : autoSplit;
@@ -390,8 +410,16 @@ function playerUpdatePad() {
 
 function playerLoad(text) {
   speechSynthesis.cancel();
-  playerSetText(text);
-  playerPlay();
+  const clean = (text || "").replace(/[/|｜／\s]/g, "");
+  if (lang === "zh" && !zhWordsMap[clean]) {
+    // 先に単語分割を取得してから節を作る（自動の単語区切り）
+    api("/api/pinyin", { texts: [text] }).then(d => {
+      if (d.words && d.words[0]) zhWordsMap[clean] = d.words[0];
+      playerSetText(text); playerPlay();
+    }).catch(() => { playerSetText(text); playerPlay(); });
+  } else {
+    playerSetText(text); playerPlay();
+  }
 }
 
 function splitModeChanged() {
