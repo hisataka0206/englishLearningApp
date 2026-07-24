@@ -55,14 +55,15 @@ def pairs_of(zh):
 
 
 def parse_comments(xml):
-    """[(block_id_nodash, syllable, label)] を返す。"""
+    """[(block_id_nodash, syllable, label, datetime)] を返す。"""
     res = []
     for dm in re.finditer(r'<discussion\s+id="discussion://[^/]+/([0-9a-f-]+)/[^"]+"[^>]*?text-context="([^"]*)"[^>]*>(.*?)</discussion>', xml, re.S):
         block = dm.group(1).replace("-", "")
         syl = dm.group(2)
-        cm = re.search(r"<comment[^>]*>([^<]*)</comment>", dm.group(3))
-        label = (cm.group(1).strip() if cm else "").lower()[:1] or "f"
-        res.append((block, syl, label))
+        cm = re.search(r'<comment[^>]*?datetime="([^"]*)"[^>]*>([^<]*)</comment>', dm.group(3))
+        dt = cm.group(1) if cm else ""
+        label = (cm.group(2).strip() if cm else "").lower()[:1] or "f"
+        res.append((block, syl, label, dt))
     return res
 
 
@@ -70,6 +71,9 @@ def main():
     page = sys.argv[1].replace("-", "")
     xml = open(sys.argv[2], encoding="utf-8").read()
     comments = parse_comments(xml)
+    if not comments:
+        print(f"{page}: コメント0件（未学習と判断しスキップ）")
+        return
 
     bs = all_blocks(page)
     b2s, b2p, pin_idx = {}, {}, 0
@@ -90,10 +94,10 @@ def main():
     art["sessions"] = [x for x in art.get("sessions", []) if x.get("source") != "notion"]
     sent = {s["idx"]: s for s in art["sentences"]}
 
-    # ブロックごとにまとめる
+    # ブロックごとにまとめ、コメント日時（＝読み順）でソート
     byblock = {}
-    for block, syl, label in comments:
-        byblock.setdefault(block, []).append((syl, label))
+    for block, syl, label, dt in comments:
+        byblock.setdefault(block, []).append((syl, label, dt))
 
     added, unmatched, skipped_vocab = 0, [], 0
     for block, fl in byblock.items():
@@ -101,29 +105,55 @@ def main():
         if not idx:
             skipped_vocab += len(fl)  # 語彙表など拼音行以外は対象外
             continue
-        zh = sent[idx]["zh"]; prs = pairs_of(zh); pyt = b2p[block]
-        fl_sorted = sorted(fl, key=lambda x: pyt.find(x[0]) if pyt.find(x[0]) >= 0 else 999)
-        used = set()
-        for syl, lab in fl_sorted:
-            ci = None
-            for i, (ch, py) in enumerate(prs):
-                if i in used:
-                    continue
-                if (py and py == syl) or ch == syl:
-                    ci = i; break
-            if ci is None:
-                for i, (ch, py) in enumerate(prs):
+        zh = sent[idx]["zh"]; prs = pairs_of(zh)
+        fl_sorted = sorted(fl, key=lambda x: x[2])  # datetime昇順＝読み順
+        pin_re = re.compile(r"[a-zāáǎàēéěèīíǐìōóǒòūúǔùüǘǚǜ]", re.I)
+
+        def find_ranges(target, is_pin):
+            """target(拼音連結 or 文字列)に一致する連続文字範囲[start,end)を全て返す。"""
+            out = []
+            for start in range(len(prs)):
+                acc = ""; end = start
+                while end < len(prs):
+                    ch, py = prs[end]
+                    unit = (py if is_pin else ch)
+                    if is_pin and not py:
+                        break
+                    acc += unit; end += 1
+                    if acc == target:
+                        out.append((start, end)); break
+                    if not target.startswith(acc):
+                        break
+            return out
+
+        used = set(); ptr = 0
+        for syl, lab, dt in fl_sorted:
+            target = syl.replace(" ", ""); is_pin = bool(pin_re.search(target))
+            allr = find_ranges(target, is_pin)  # 文中の全候補
+            avail = [r for r in allr if not any(i in used for i in range(r[0], r[1]))]
+            if len(allr) == 1:              # 文中で一意→順序に関わらず確定
+                pick = allr[0]
+            elif avail:                     # 複数出現→読み順ポインタで前方優先
+                pick = next((r for r in avail if r[0] >= ptr), avail[0])
+                ptr = pick[1]
+            else:                           # 部分一致で1文字だけ救済
+                pick = None
+                for i in range(len(prs)):
                     if i in used:
                         continue
-                    if syl and syl in (py or ""):
-                        ci = i; break
-            if ci is None:
+                    ch, py = prs[i]
+                    if (is_pin and py and target.startswith(py)) or (not is_pin and ch and ch in target):
+                        pick = (i, i + 1); break
+            if not pick:
                 unmatched.append((idx, syl)); continue
-            used.add(ci)
-            art["fails"].append({"idx": idx, "ci": ci, "char": prs[ci][0],
-                                 "syllable": prs[ci][1] or syl, "label": LAB.get(lab, "F"),
-                                 "time": "2026-07-16 08:00:00", "pushed": True, "sessioned": True})
-            added += 1
+            for i in range(*pick):
+                used.add(i)
+                art["fails"].append({"idx": idx, "ci": i, "char": prs[i][0],
+                                     "syllable": prs[i][1] or (target if pick[1] - pick[0] == 1 else ""),
+                                     "label": LAB.get(lab, "F"),
+                                     "time": (dt or "2026-07-16")[:10] + " 08:00:00",
+                                     "pushed": True, "sessioned": True})
+                added += 1
 
     total = art.get("total_chars", 0) or 1
     misses = len(art["fails"])
