@@ -980,6 +980,10 @@ async function toggleRecord() {
   if (mediaRec && mediaRec.state === "recording") { stopRecord(); return; }
   const text = (player.phrases || []).join("") && (player.text || "").replace(/[/|｜／]/g, "").trim();
   if (!text) { alert("先に発音する文を表示してください"); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    alert("録音にはHTTPS接続が必要です。\n\n・Mac本体なら http://localhost:8765 で開く\n・スマホからは Tailscale の https URL で開く\n（設定方法はREADME参照）");
+    return;
+  }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     recChunks = [];

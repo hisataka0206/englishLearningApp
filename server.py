@@ -1050,7 +1050,19 @@ def main():
         drive_pull_initial()
     migrate_ids()  # 既存データへの固有ID付与（無いものだけ）
     warm_up()  # preload the model at startup
-    ThreadingHTTPServer((host, port), Handler).serve_forever()
+
+    srv = ThreadingHTTPServer((host, port), Handler)
+    # 録音（マイク）はHTTPSまたはlocalhostでのみ許可されるため、証明書があればTLS化
+    cert = CFG["server"].get("certfile")
+    key = CFG["server"].get("keyfile")
+    if cert and key and os.path.exists(os.path.join(BASE_DIR, cert)) \
+            and os.path.exists(os.path.join(BASE_DIR, key)):
+        import ssl
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(os.path.join(BASE_DIR, cert), os.path.join(BASE_DIR, key))
+        srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+        print(f"HTTPS 有効: https://<このMacの名前>:{port}  （マイク録音が使えます）")
+    srv.serve_forever()
 
 
 if __name__ == "__main__":
