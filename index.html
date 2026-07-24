@@ -37,11 +37,22 @@
   .navb.active { background:#fff; color:var(--accent); }
   .artrow { padding:10px 4px; border-bottom:1px solid #f0f1f5; cursor:pointer; }
   .artrow:hover { background:#f8faff; }
+  .artrow.studied { background:#eceef3; color:#666; }
   .artrow .t { font-size:14px; }
-  .asent { padding:8px 4px; border-bottom:1px solid #f0f1f5; }
-  .aword { display:inline-block; margin:2px 3px; padding:3px 7px; background:#eef1f8; border-radius:8px; font-size:15px; cursor:pointer; }
-  .aword.failed { background:#fdecec; color:var(--ng); }
-  .aword .wp { display:block; font-size:10px; color:var(--accent); text-align:center; }
+  .asent { padding:10px 4px; border-bottom:1px solid #f0f1f5; }
+  .cgrid { display:flex; flex-wrap:wrap; align-items:flex-end; margin:4px 0 6px; }
+  .cchar { display:inline-flex; flex-direction:column; align-items:center; cursor:pointer;
+    padding:1px 2px; border-radius:6px; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  .cchar:active { background:#e8eeff; }
+  .cchar .py { font-size:11px; color:var(--accent); line-height:1.2; min-height:13px; }
+  .cchar .hz { font-size:22px; line-height:1.25; }
+  .cchar.failed .hz { color:var(--ng); }
+  .cchar.failed .lb { font-size:9px; color:var(--ng); line-height:1; }
+  .cgap { width:4px; align-self:stretch; cursor:pointer; border-radius:3px; margin:0 1px; }
+  .cgap.brk { width:3px; background:var(--accent); }
+  .cgap:hover { background:#cdd7f5; }
+  .fbtn { display:inline-block; margin:2px; padding:8px 10px; border:0; border-radius:8px; background:#eef1f8; font-size:14px; cursor:pointer; }
+  .fbtn.rm { background:#fdecec; color:var(--ng); }
   .badge { background:#fdecec; color:var(--ng); border-radius:8px; font-size:12px; padding:2px 8px; }
   .msg { font-size:13px; margin-top:8px; min-height:16px; }
   .msg.ok { color:var(--ok); } .msg.ng { color:var(--ng); }
@@ -63,14 +74,18 @@
 <header>English Learning <span id="ver" style="font-size:11px;font-weight:400;opacity:.8"></span>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="status">…</div>
-    <button class="navb" id="nav_main" onclick="showView('main')">🎤</button>
-    <button class="navb" id="nav_articles" onclick="showView('articles')">📰</button>
-    <button class="navb" id="nav_history" onclick="showView('history')">📜</button>
+    <button class="navb" id="nav_main" onclick="showView('main')">✍️ 自分の文</button>
+    <button class="navb" id="nav_articles" onclick="showView('articles')">📰 記事</button>
     <button class="navb" onclick="location.reload()">⟳</button>
   </div>
 </header>
 <main>
 <div id="viewMain">
+  <div class="row" style="margin-bottom:10px">
+    <button class="tab small active" id="sub_compose" onclick="setSub('compose')">作成</button>
+    <button class="tab small" id="sub_history" onclick="setSub('history')">履歴</button>
+  </div>
+  <div id="subCompose">
   <div class="card">
     <h2>言いたいことを日本語で</h2>
     <textarea id="ja" placeholder="例：きょうは友だちと公園でサッカーをしてあそんだよ"></textarea>
@@ -98,19 +113,20 @@
     </div>
     <div class="msg" id="msgSave"></div>
   </div>
-</div>
+  </div>
 
-<div id="viewHistory" style="display:none">
+  <div id="subHistory" style="display:none">
   <div class="card">
     <h2>履歴 <button class="small ghost" onclick="loadHistory()">更新</button></h2>
     <div class="row" style="margin-top:4px;align-items:center">
       <button class="small tab active" id="tab_date" onclick="setTab('date')">日付別</button>
-      <button class="small tab" id="tab_sent" onclick="setTab('sent')">英文のみ</button>
+      <button class="small tab" id="tab_sent" onclick="setTab('sent')">文のみ</button>
       <button class="small tab" id="tab_word" onclick="setTab('word')">単語のみ</button>
       <input id="hFilter" placeholder="検索" oninput="renderHistory()"
         style="flex:1;min-width:80px;font-size:13px;padding:6px;border:1px solid #d8dce6;border-radius:8px">
     </div>
     <div id="history">読み込み中…</div>
+  </div>
   </div>
 </div>
 
@@ -125,13 +141,22 @@
   <div class="card" id="articleDetail" style="display:none">
     <h2><button class="small ghost" onclick="closeArticle()">← 記事一覧</button>
       <span id="artTitle"></span></h2>
-    <div class="row" style="margin-top:0">
-      <button class="primary" id="btnPush" onclick="pushFails()">Notionへ反映</button>
-      <span class="badge" id="pendingBadge"></span>
+    <div style="font-size:12px;color:var(--muted);background:#f5f6fa;border-radius:8px;padding:6px 8px;margin-bottom:8px">
+      文字を<b>タップ=発音</b>／<b>長押し（PCは右クリック）=ミス記録</b>。文字のすき間をタップで<b>区切り</b>。▶で節ごとに発音。
     </div>
     <div id="artSentences"></div>
     <h2 style="margin-top:14px">重要語彙</h2>
     <div id="artVocab"></div>
+    <div class="row" style="margin-top:14px;position:sticky;bottom:0;background:var(--card);padding:8px 0">
+      <button class="primary" onclick="finishStudy()">✅ 勉強完了</button>
+      <button class="ghost" id="btnPush" onclick="pushFails()">Notionへ反映</button>
+      <span class="badge" id="pendingBadge"></span>
+    </div>
+  </div>
+  <!-- ミス種類ポップアップ -->
+  <div id="failPop" style="display:none;position:fixed;z-index:30;background:#fff;border:1px solid var(--accent);border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.2);padding:8px">
+    <div id="failPopChar" style="font-weight:700;text-align:center;margin-bottom:4px"></div>
+    <div id="failPopBtns"></div>
   </div>
 </div>
 </main>
@@ -453,6 +478,7 @@ async function health() {
   try {
     const h = await api("/api/health");
     failLabels = h.fail_labels || failLabels;
+    if (h.article_fail_labels && h.article_fail_labels.length) failLabelsZh = h.article_fail_labels;
     document.getElementById("ver").textContent = h.version ? "v" + h.version : "";
     const st = h.storage_mode === "drive_api"
       ? (h.drive_ready ? "Drive ✅接続確認済" : "Drive ❌通信不可")
@@ -544,7 +570,7 @@ async function study(id) {
   // 保存済みの英文を呼び出して再学習：メイン画面に切り替えて区切りも復元
   const s = sentCache[id];
   if (!s) return;
-  showView("main");
+  showView("main"); setSub("compose");
   document.getElementById("ja").value = s.japanese;
   current = { japanese: s.japanese, english: s.english,
               marked: s.marked || s.english, keywords: [], pageId: id };
@@ -579,12 +605,20 @@ function showView(v) {
   view = v;
   document.getElementById("viewMain").style.display = v === "main" ? "" : "none";
   document.getElementById("viewArticles").style.display = v === "articles" ? "" : "none";
-  document.getElementById("viewHistory").style.display = v === "history" ? "" : "none";
-  ["main","articles","history"].forEach(x =>
+  ["main","articles"].forEach(x =>
     document.getElementById("nav_" + x).classList.toggle("active", x === v));
-  if (v === "history") loadHistory();
   if (v === "articles") loadArticles();
   window.scrollTo(0, 0);
+}
+
+let sub = "compose";
+function setSub(s) {
+  sub = s;
+  document.getElementById("subCompose").style.display = s === "compose" ? "" : "none";
+  document.getElementById("subHistory").style.display = s === "history" ? "" : "none";
+  document.getElementById("sub_compose").classList.toggle("active", s === "compose");
+  document.getElementById("sub_history").classList.toggle("active", s === "history");
+  if (s === "history") loadHistory();
 }
 
 // ---- 履歴機能：日付別 / 英文のみ / 単語のみ を表形式で表示 ----
@@ -672,11 +706,15 @@ async function loadArticles() {
     box.innerHTML = "";
     list.forEach(a => {
       const d = document.createElement("div");
-      d.className = "artrow";
+      d.className = "artrow" + (a.studied ? " studied" : "");
       d.onclick = () => openArticle(a.id);
+      // タイトル先頭に日付が入っているので日付は重複表示しない
+      const status = a.studied
+        ? `学習 ${a.last_studied}（${a.study_count}回）｜ Nomiss ${a.nomiss}%`
+        : `未学習`;
       const pend = a.pending_fails ? ` <span class="badge">未反映 ${a.pending_fails}</span>` : "";
       d.innerHTML = `<div class="t">${esc(a.title)}${pend}</div>
-        <div class="sub">${a.date} ｜ ${a.sentence_count}句 ｜ 語彙${a.vocab_count}</div>`;
+        <div class="sub">${status}</div>`;
       box.appendChild(d);
     });
   } catch(e) { box.textContent = e.message; }
@@ -724,24 +762,128 @@ function closeArticle() {
   loadArticles();
 }
 
+function failKey(idx, ci) { return idx + "|" + ci; }
+
 function renderArtSentences() {
   const box = document.getElementById("artSentences");
   box.innerHTML = "";
-  const failed = new Set((curArticle.fails || []).map(f => f.idx + "|" + f.syllable));
+  const fmap = {};
+  (curArticle.fails || []).forEach(f => { fmap[failKey(f.idx, f.ci)] = f.label; });
   curArticle.sentences.forEach(s => {
     const d = document.createElement("div");
     d.className = "asent";
-    const words = (s.pinyin || "").split(/\s+/).filter(Boolean);
-    const chips = words.map(w => {
-      const cls = failed.has(s.idx + "|" + w) ? "aword failed" : "aword";
-      return `<span class="${cls}" onclick="artFail(this,${s.idx},'${w.replace(/'/g,"\\'")}')">${esc(w)}</span>`;
-    }).join("");
-    d.innerHTML = `<div style="font-size:17px">${esc(s.zh)}</div>
-      <div style="margin:3px 0">${chips}</div>
-      ${s.ja ? `<div class="sub">${esc(s.ja)}</div>` : ""}
-      <button class="small ghost" onclick="playerLoad('${(s.zh||'').replace(/'/g,"\\'")}')">🔊 この句を発音</button>`;
+    const pairs = s.pairs || (s.zh || "").split("").map(c => [c, ""]);
+    const breaks = new Set(s.breaks || []);
+    let grid = '<div class="cgrid">';
+    pairs.forEach((p, ci) => {
+      const [ch, py] = p;
+      const isHan = /[一-鿿]/.test(ch);
+      // 文字の前の区切りギャップ（先頭以外）
+      if (ci > 0) grid += `<span class="cgap${breaks.has(ci - 1) ? " brk" : ""}" onclick="toggleBreak(${s.idx},${ci - 1})"></span>`;
+      const lb = fmap[failKey(s.idx, ci)];
+      const cls = "cchar" + (lb ? " failed" : "");
+      const safe = ch.replace(/'/g, "\\'");
+      grid += `<span class="${cls}" data-idx="${s.idx}" data-ci="${ci}" data-ch="${esc(ch)}" data-py="${esc(py)}"
+        ${isHan ? `onclick="charTap('${safe}')" oncontextmenu="return charMenu(event,${s.idx},${ci})"` : ""}>
+        <span class="py">${esc(py)}</span><span class="hz">${esc(ch)}</span>${lb ? `<span class="lb">${lb}</span>` : ""}</span>`;
+    });
+    grid += "</div>";
+    d.innerHTML = grid +
+      (s.ja ? `<div class="sub">${esc(s.ja)}</div>` : "") +
+      `<button class="small ghost" onclick='playArtSentence(${s.idx})'>▶ 節ごとに発音</button>`;
     box.appendChild(d);
+    // 長押し（モバイル）でミス記録メニュー
+    d.querySelectorAll(".cchar").forEach(el => attachLongPress(el));
   });
+}
+
+function playArtSentence(idx) {
+  const s = curArticle.sentences.find(x => x.idx === idx);
+  if (!s) return;
+  // 区切り位置に「/」を差し込んで節分割してプレイヤーへ
+  const breaks = new Set(s.breaks || []);
+  let marked = "";
+  s.zh.split("").forEach((ch, i) => { marked += ch; if (breaks.has(i)) marked += " / "; });
+  playerLoad(marked);
+}
+
+function toggleBreak(idx, pos) {
+  const s = curArticle.sentences.find(x => x.idx === idx);
+  s.breaks = s.breaks || [];
+  const i = s.breaks.indexOf(pos);
+  if (i >= 0) s.breaks.splice(i, 1); else s.breaks.push(pos);
+  renderArtSentences();
+  api("/api/articles/breaks", { article_id: curArticle.id, idx, breaks: s.breaks }).catch(() => {});
+}
+
+let suppressTap = false;
+function charTap(ch) { if (suppressTap) { suppressTap = false; return; } speak(ch); }  // タップ＝発音
+
+// 長押し（touch）でミス記録メニュー
+function attachLongPress(el) {
+  let timer = null;
+  const start = () => {
+    timer = setTimeout(() => { timer = null; suppressTap = true; openFailMenu(el); }, 450);
+  };
+  const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  el.addEventListener("touchstart", start, { passive: true });
+  el.addEventListener("touchend", cancel);
+  el.addEventListener("touchmove", cancel);
+}
+
+function charMenu(ev, idx, ci) {  // PC: 右クリック
+  ev.preventDefault();
+  openFailMenu(ev.currentTarget);
+  return false;
+}
+
+let failLabelsZh = [{ code: "F", name: "Fail" }];
+
+function openFailMenu(el) {
+  const idx = +el.dataset.idx, ci = +el.dataset.ci, ch = el.dataset.ch, py = el.dataset.py;
+  const pop = document.getElementById("failPop");
+  document.getElementById("failPopChar").textContent = `${ch}  ${py}`;
+  const already = (curArticle.fails || []).some(f => f.idx === idx && f.ci === ci);
+  let btns = failLabelsZh.map(l =>
+    `<button class="fbtn" title="${esc(l.name)}" onclick="setCharFail(${idx},${ci},'${ch.replace(/'/g,"\\'")}','${py.replace(/'/g,"\\'")}','${l.code}')"><b>${l.code}</b> ${esc(l.name)}</button>`).join("");
+  if (already) btns += `<button class="fbtn rm" onclick="removeCharFail(${idx},${ci})">✕ 取消</button>`;
+  document.getElementById("failPopBtns").innerHTML = btns;
+  // 位置：文字の近く
+  const r = el.getBoundingClientRect();
+  pop.style.display = "block";
+  const pw = 260, ph = pop.offsetHeight || 120;
+  let left = Math.min(r.left, window.innerWidth - pw - 10);
+  let top = r.bottom + 6; if (top + ph > window.innerHeight) top = r.top - ph - 6;
+  pop.style.left = Math.max(8, left) + "px";
+  pop.style.top = Math.max(8, top) + "px";
+}
+
+function closeFailMenu() { document.getElementById("failPop").style.display = "none"; }
+document.addEventListener("click", (e) => {
+  const pop = document.getElementById("failPop");
+  if (pop.style.display === "block" && !pop.contains(e.target) && !e.target.classList.contains("cchar") && !e.target.closest(".cchar"))
+    closeFailMenu();
+});
+
+async function setCharFail(idx, ci, ch, py, label) {
+  closeFailMenu();
+  try {
+    const d = await api("/api/articles/fail", { article_id: curArticle.id, idx, ci, char: ch, syllable: py, label });
+    curArticle.fails = (curArticle.fails || []).filter(f => !(f.idx === idx && f.ci === ci));
+    curArticle.fails.push({ idx, ci, char: ch, syllable: py, label, pushed: false });
+    renderArtSentences();
+    updatePending(d.pending_fails);
+  } catch(e) { alert(e.message); }
+}
+
+async function removeCharFail(idx, ci) {
+  closeFailMenu();
+  try {
+    const d = await api("/api/articles/unfail", { article_id: curArticle.id, idx, ci });
+    curArticle.fails = (curArticle.fails || []).filter(f => !(f.idx === idx && f.ci === ci));
+    renderArtSentences();
+    updatePending(d.pending_fails);
+  } catch(e) { alert(e.message); }
 }
 
 function renderArtVocab() {
@@ -755,21 +897,17 @@ function renderArtVocab() {
   box.innerHTML = h + "</table>";
 }
 
-async function artFail(chip, idx, syllable) {
-  if (chip.classList.contains("failed")) return;  // 既にFail済みは二重登録しない
-  chip.classList.add("failed");
-  try {
-    const d = await api("/api/articles/fail", { article_id: curArticle.id, idx, syllable });
-    curArticle.fails = curArticle.fails || [];
-    curArticle.fails.push({ idx, syllable, pushed: false });
-    updatePending(d.pending_fails);
-  } catch(e) { chip.classList.remove("failed"); alert(e.message); }
-}
-
 function updatePending(n) {
   if (n === undefined) n = (curArticle.fails || []).filter(f => !f.pushed).length;
-  const b = document.getElementById("pendingBadge");
-  b.textContent = n ? `未反映 ${n}` : "反映済み";
+  document.getElementById("pendingBadge").textContent = n ? `未反映 ${n}` : "";
+}
+
+async function finishStudy() {
+  try {
+    const d = await api("/api/articles/session", { article_id: curArticle.id });
+    alert(`勉強完了！ Nomiss率 ${d.nomiss}%（ミス ${d.misses}/${d.total}字）`);
+    closeArticle();
+  } catch(e) { alert(e.message); }
 }
 
 async function pushFails() {
@@ -779,7 +917,7 @@ async function pushFails() {
     const d = await api("/api/articles/push", { article_id: curArticle.id });
     (curArticle.fails || []).forEach(f => f.pushed = true);
     updatePending(0);
-    alert(d.pushed ? `Notionの失敗履歴に${d.pushed}件反映しました` : "反映するFailはありませんでした");
+    alert(d.pushed ? `Notionの失敗履歴に${d.pushed}件反映しました` : "反映するミスはありませんでした");
   } catch(e) { alert(e.message); }
   btn.disabled = false;
 }

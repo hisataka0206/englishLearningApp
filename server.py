@@ -26,7 +26,16 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.17.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.18.0"  # 機能変更時にここを更新（画面右上に表示される）
+
+# 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
+ARTICLE_FAIL_LABELS = [
+    {"code": "F", "name": "Fail(基本)"},
+    {"code": "R", "name": "声母・翘舌(zh/ch/sh↔z/c/s)"},
+    {"code": "V", "name": "韻母(母音・鼻音)"},
+    {"code": "T", "name": "声調"},
+    {"code": "N", "name": "数字2(两/二)"},
+]
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -365,7 +374,14 @@ def articles_refresh(limit=4):
             continue
         art["id"] = uuid.uuid4().hex
         art["imported_at"] = now()
-        art["fails"] = []  # [{idx, syllable, hanzi, label, time, pushed}]
+        art["fails"] = []  # [{idx, ci, char, syllable, label, time, pushed, sessioned}]
+        art["sessions"] = []  # [{date, misses, total, nomiss}]
+        total = 0
+        for s in art["sentences"]:
+            s["pairs"] = to_pinyin_pairs(s["zh"])  # [文字, 拼音]の列（1文字表示用）
+            s["breaks"] = []  # 節区切り位置（文字indexの後で区切る）
+            total += count_hanzi(s["zh"])
+        art["total_chars"] = total
         with LOCK:
             local = _articles()
             if art["notion_page_id"] not in {a["notion_page_id"] for a in local}:
@@ -383,9 +399,13 @@ def articles_list():
     out = []
     for a in _articles():
         pending = sum(1 for f in a.get("fails", []) if not f.get("pushed"))
+        sessions = a.get("sessions", [])
+        last = sessions[-1] if sessions else None
         out.append({"id": a["id"], "title": a["title"], "date": a.get("date", ""),
-                    "sentence_count": len(a.get("sentences", [])),
-                    "vocab_count": len(a.get("vocab", [])),
+                    "studied": bool(sessions),
+                    "last_studied": last["date"] if last else "",
+                    "nomiss": last["nomiss"] if last else None,
+                    "study_count": len(sessions),
                     "pending_fails": pending,
                     "notion_page_id": a.get("notion_page_id", "")})
     out.sort(key=lambda x: x["date"], reverse=True)
@@ -399,21 +419,83 @@ def articles_get(article_id):
     return None, "article not found"
 
 
-def article_fail(article_id, idx, syllable, hanzi="", label="Fail"):
-    """記事の句/音節に対するFailをローカル記録（Notionへは手動pushで反映）。"""
-    if not article_id or idx is None:
-        return None, "article_id and idx are required"
+def article_fail(article_id, idx, ci, char="", syllable="", label="F"):
+    """記事の1文字に対するFailを記録/更新（同じ文字は上書き）。ci=文字index。"""
+    if not article_id or idx is None or ci is None:
+        return None, "article_id, idx, ci are required"
     with LOCK:
         arts = _articles()
         for a in arts:
-            if a["id"] == article_id:
-                a.setdefault("fails", []).append({
-                    "idx": idx, "syllable": syllable, "hanzi": hanzi,
-                    "label": label, "time": now(), "pushed": False})
-                _save("articles_zh.json", arts)
-                drive_push_async()
-                pending = sum(1 for f in a["fails"] if not f.get("pushed"))
-                return {"pending_fails": pending}, None
+            if a["id"] != article_id:
+                continue
+            fails = a.setdefault("fails", [])
+            # 同じ(句,文字)が既にあればラベル更新、無ければ追加
+            for f in fails:
+                if f["idx"] == idx and f.get("ci") == ci:
+                    f["label"] = label
+                    f["time"] = now()
+                    f["pushed"] = False
+                    break
+            else:
+                fails.append({"idx": idx, "ci": ci, "char": char,
+                              "syllable": syllable, "label": label,
+                              "time": now(), "pushed": False, "sessioned": False})
+            _save("articles_zh.json", arts)
+            drive_push_async()
+            pending = sum(1 for f in fails if not f.get("pushed"))
+            return {"pending_fails": pending}, None
+    return None, "article not found"
+
+
+def article_unfail(article_id, idx, ci):
+    with LOCK:
+        arts = _articles()
+        for a in arts:
+            if a["id"] != article_id:
+                continue
+            fails = a.get("fails", [])
+            a["fails"] = [f for f in fails if not (f["idx"] == idx and f.get("ci") == ci)]
+            _save("articles_zh.json", arts)
+            drive_push_async()
+            return {"pending_fails": sum(1 for f in a["fails"] if not f.get("pushed"))}, None
+    return None, "article not found"
+
+
+def article_set_breaks(article_id, idx, breaks):
+    """節区切り位置（文字indexの後で区切る）を保存。"""
+    with LOCK:
+        arts = _articles()
+        for a in arts:
+            if a["id"] != article_id:
+                continue
+            for s in a.get("sentences", []):
+                if s["idx"] == idx:
+                    s["breaks"] = sorted(set(int(b) for b in breaks))
+                    _save("articles_zh.json", arts)
+                    drive_push_async()
+                    return {"ok": True}, None
+    return None, "sentence not found"
+
+
+def article_session(article_id):
+    """勉強完了：今回のミス数からNomiss率を計算しセッション記録。"""
+    with LOCK:
+        arts = _articles()
+        for a in arts:
+            if a["id"] != article_id:
+                continue
+            total = a.get("total_chars", 0) or 1
+            new = [f for f in a.get("fails", []) if not f.get("sessioned")]
+            misses = len(new)
+            for f in new:
+                f["sessioned"] = True
+            nomiss = round(100 * (total - misses) / total, 1)
+            sess = {"date": now()[:10], "misses": misses,
+                    "total": total, "nomiss": nomiss}
+            a.setdefault("sessions", []).append(sess)
+            _save("articles_zh.json", arts)
+            drive_push_async()
+            return sess, None
     return None, "article not found"
 
 
@@ -429,8 +511,8 @@ def article_push_fails(article_id):
         pending = [f for f in art.get("fails", []) if not f.get("pushed")]
         if not pending:
             return {"pushed": 0}, None
-        rows = [[f["time"][:10], f"第{f['idx']}句", f.get("syllable", ""),
-                 f.get("hanzi", ""), f.get("label", "Fail")] for f in pending]
+        rows = [[f["time"][:10], f"第{f['idx']}句", f.get("char", ""),
+                 f.get("syllable", ""), f.get("label", "F")] for f in pending]
         page_id = art["notion_page_id"]
         table_id = art.get("notion_fail_table_id")
         if not table_id:
@@ -579,6 +661,27 @@ def to_pinyin(text):
         return ""
     from pypinyin import lazy_pinyin, Style
     return " ".join(lazy_pinyin(text, style=Style.TONE))
+
+
+def to_pinyin_pairs(text):
+    """各文字を [文字, その字の拼音] に対応付ける（1文字ずつ表示・選択用）。
+    漢字以外（句読点・数字・英字・空白）は拼音を空にする。"""
+    if not text:
+        return []
+    ok = _ensure_pypinyin()
+    from pypinyin import pinyin, Style
+    pairs = []
+    for ch in text:
+        if ok and "一" <= ch <= "鿿":
+            py = pinyin(ch, style=Style.TONE, errors="default")
+            pairs.append([ch, py[0][0] if py and py[0] else ""])
+        else:
+            pairs.append([ch, ""])
+    return pairs
+
+
+def count_hanzi(text):
+    return sum(1 for ch in (text or "") if "一" <= ch <= "鿿")
 
 
 def _has_japanese(s):
@@ -741,7 +844,8 @@ class Handler(BaseHTTPRequestHandler):
                       "storage_path": data_dir, "storage_mode": mode,
                       "drive_ready": drive_ready, "drive_error": drive_err,
                       "notion_ready": bool(NOTION and NOTION.configured()),
-                      "fail_labels": CFG.get("fail_labels", ["Fail"])})
+                      "fail_labels": CFG.get("fail_labels", ["Fail"]),
+                      "article_fail_labels": ARTICLE_FAIL_LABELS})
         elif self.path.startswith("/api/sentences"):
             data, err = list_sentences(lang=self._lang())
             self._ok(data) if not err else self._fail(err)
@@ -773,7 +877,8 @@ class Handler(BaseHTTPRequestHandler):
             data, err = translate(japanese, body.get("model"), lang)
         elif self.path == "/api/pinyin":
             texts = body.get("texts") or []
-            data, err = {"pinyins": [to_pinyin(t) for t in texts]}, None
+            data, err = {"pinyins": [to_pinyin(t) for t in texts],
+                         "pairs": [to_pinyin_pairs(t) for t in texts]}, None
         elif self.path == "/api/keywords":
             english = (body.get("english") or "").strip()
             if not english:
@@ -817,8 +922,16 @@ class Handler(BaseHTTPRequestHandler):
             data, err = articles_refresh(int(body.get("limit", 4)))
         elif self.path == "/api/articles/fail":
             data, err = article_fail(body.get("article_id"), body.get("idx"),
-                                     body.get("syllable", ""), body.get("hanzi", ""),
-                                     body.get("label", "Fail"))
+                                     body.get("ci"), body.get("char", ""),
+                                     body.get("syllable", ""), body.get("label", "F"))
+        elif self.path == "/api/articles/unfail":
+            data, err = article_unfail(body.get("article_id"), body.get("idx"),
+                                       body.get("ci"))
+        elif self.path == "/api/articles/breaks":
+            data, err = article_set_breaks(body.get("article_id"), body.get("idx"),
+                                           body.get("breaks", []))
+        elif self.path == "/api/articles/session":
+            data, err = article_session(body.get("article_id"))
         elif self.path == "/api/articles/push":
             data, err = article_push_fails(body.get("article_id"))
         else:

@@ -147,7 +147,7 @@ class NotionClient:
             return [{"type": "text", "text": {"content": str(s)[:200]}}]
         return {"type": "table_row", "table_row": {"cells": [rt(c) for c in cells]}}
 
-    FAIL_HEADER = ["日付", "句", "拼音", "漢字", "ラベル"]
+    FAIL_HEADER = ["日付", "句", "漢字", "拼音", "ラベル"]
 
     def find_fail_table(self, page_id):
         """末尾の「失敗履歴」テーブルのblock idを返す（無ければNone）。"""
