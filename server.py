@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.18.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.18.1"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -143,7 +143,8 @@ def drive_pull_initial():
     """On startup, fetch data files from Drive if we have no local copy."""
     if not (DRIVE and DRIVE.configured()):
         return
-    for name in SENT_FILES + WORD_FILES:  # 英語・中国語の両方を取り込む
+    # 英語・中国語の文/単語に加え、記事データも起動時に復元する
+    for name in SENT_FILES + WORD_FILES + ["articles_zh.json"]:
         p = _file(name)
         if os.path.exists(p):
             continue
