@@ -135,7 +135,7 @@ def main():
 
         used = set(); ptr = 0
         for syl, lab, dt in fl_sorted:
-            target = syl.replace(" ", ""); is_pin = bool(pin_re.search(target))
+            target = re.sub(r"[ '’·\-–]", "", syl); is_pin = bool(pin_re.search(target))
             allr = find_ranges(target, is_pin)  # 文中の全候補
             if not allr and is_pin:
                 allr = find_ranges(target, is_pin, loose=True)  # 声調無視で救済
