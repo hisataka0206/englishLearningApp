@@ -433,12 +433,12 @@ def record_fail(sentence_id, label="Fail"):
 | `/api/health`, `warm_up()`, `migrate_ids()`, `list_models()` | 不要 |
 | ローカル `data/` ディレクトリと排他制御 | Postgresが担う |
 
-> **ただし `server.py` 系のファイルは削除しないこと。** `exit-plan.md` §4.2（ローカル構成への回帰）の保険として、動く状態のブランチを1本残す。
+> **ただし `server.py` 系のファイルは削除しないこと。** `../00-business/exit-plan.md` §4.2（ローカル構成への回帰）の保険として、動く状態のブランチを1本残す。
 
 ---
 
 ### 関連ドキュメント
 
-- `docs/family-edition-spec.md` — 家族版の仕様書（本書の移植先）
-- `docs/status-summary.md` — 検討の現況整理
-- `docs/saas-migration-plan.md` — 事業版の設計書
+- `family-edition-spec.md` — 家族版の仕様書（本書の移植先）
+- `../20-plans/status-summary.md` — 検討の現況整理
+- `../30-research/saas-migration-study.md` — 事業版の設計書

@@ -1,6 +1,6 @@
 # 事業版[[差分仕様書]]
 
-作成日: 2026-07-26 / ベースライン: `docs/family-edition-spec.md`
+作成日: 2026-07-26 / ベースライン: `family-edition-spec.md`
 対象: 家族版から**有料SaaS版へ拡張する差分のみ**
 
 > **本書は差分のみを記述する。** 家族版と同一の部分は書かない。
@@ -98,7 +98,7 @@ erDiagram
 
 ### 2.2 追加テーブル（7本）
 
-定義の全文は `saas-migration-plan.md` §5.1b を参照。役割の要約：
+定義の全文は `../30-research/saas-migration-study.md` §5.1b を参照。役割の要約：
 
 | テーブル | 役割 | `user_id` |
 |---|---|---|
@@ -412,7 +412,7 @@ flowchart LR
 
 **テーブルを DROP する必要はない。** cron を止めれば `raw_articles` は増えず、UIを隠せば `lessons` は参照されない。Free枠の500MBに収めるためにデータを退避・削除するだけでよい。
 
-所要時間は半日程度（`exit-plan.md` §4.1）。
+所要時間は半日程度（`../00-business/exit-plan.md` §4.1）。
 
 **注意**：撤退時に `profiles` の `"family read"` ポリシーを**復活させる**か判断すること（家族の最終利用日を再び見せるなら必要）。
 
@@ -462,9 +462,9 @@ flowchart LR
 
 ### 関連ドキュメント
 
-- `docs/family-edition-spec.md` — **ベースライン（本書と対で使う）**
-- `docs/current-app-inventory.md` — 現行機能の移植チェックリスト
-- `docs/saas-migration-plan.md` — 事業版の背景・意思決定・法務要件
-- `docs/pricing-plan.md` — 料金プラン・原価計算
-- `docs/content-sources.md` — 情報源の評価（**ライセンスの正典**）
-- `docs/exit-plan.md` — 撤退ラインと退避先
+- `family-edition-spec.md` — **ベースライン（本書と対で使う）**
+- `current-app-inventory.md` — 現行機能の移植チェックリスト
+- `../30-research/saas-migration-study.md` — 事業版の背景・意思決定・法務要件
+- `../00-business/pricing-plan.md` — 料金プラン・原価計算
+- `../30-research/content-sources.md` — 情報源の評価（**ライセンスの正典**）
+- `../00-business/exit-plan.md` — 撤退ラインと退避先

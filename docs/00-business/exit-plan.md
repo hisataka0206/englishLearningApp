@@ -142,7 +142,7 @@ Supabase Free + Vercel Hobby で開発する。**Supabase Pro に切り替える
 ## 4. 退避先（撤退後の構成）
 
 > ★ **方針変更（2026-07-25）**：Plan A を「撤退先」ではなく **「出発点」** にする。
-> 家族版を先にリリースし、2ヶ月使ってから収益化を判断する（`saas-migration-plan.md` §8.0）。
+> 家族版を先にリリースし、2ヶ月使ってから収益化を判断する（`../30-research/saas-migration-study.md` §8.0）。
 > **これにより「撤退」という工程自体が消える。** 家族版は常に動いており、収益化を足すか足さないかを選ぶだけになる。
 > 以下の §4.1 は、有料化した後に事業を畳む場合の「戻り先」として引き続き有効。
 
@@ -267,9 +267,9 @@ Supabase Free + Vercel Hobby で開発する。**Supabase Pro に切り替える
 
 ### 関連ドキュメント
 
-- `docs/family-edition-spec.md` — **家族版の仕様書（＝Plan A の実体）**
-- `docs/saas-diff-spec.md` — 事業版の差分仕様書（**§7 の撤退手順は本書の差分の裏返し**）
-- `docs/status-summary.md` — 検討の現況整理
-- `docs/content-sources.md` — 情報源の評価と選定方針
-- `docs/pricing-plan.md` — 料金プラン設計・原価計算・損益分岐点
-- `docs/saas-migration-plan.md` — 移行設計書・アーキテクチャ・ロードマップ
+- `../10-specs/family-edition-spec.md` — **家族版の仕様書（＝Plan A の実体）**
+- `../10-specs/saas-diff-spec.md` — 事業版の差分仕様書（**§7 の撤退手順は本書の差分の裏返し**）
+- `../20-plans/status-summary.md` — 検討の現況整理
+- `../30-research/content-sources.md` — 情報源の評価と選定方針
+- `pricing-plan.md` — 料金プラン設計・原価計算・損益分岐点
+- `../30-research/saas-migration-study.md` — 移行設計書・アーキテクチャ・ロードマップ

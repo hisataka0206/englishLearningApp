@@ -94,7 +94,7 @@ WMF理事会が閉鎖を決定。全言語版が read-only 化され、**過去3
 
 ## 4. 推奨する情報源の構成
 
-詳細は `docs/content-sources.md`。
+詳細は `../30-research/content-sources.md`。
 
 | 役割 | ソース | ライセンス | 取得手段 | 比率 |
 |---|---|---|---|---|
@@ -130,7 +130,7 @@ WMF理事会が閉鎖を決定。全言語版が read-only 化され、**過去3
 
 ## 6. 次にやること
 
-**方針変更**：需要検証（LP事前登録）と目利きの一致率テストは**実施しない**。投資コストが低いため、作って出して、ダメなら畳む。代わりに**撤退ラインを事前に決める**（`docs/exit-plan.md`）。
+**方針変更**：需要検証（LP事前登録）と目利きの一致率テストは**実施しない**。投資コストが低いため、作って出して、ダメなら畳む。代わりに**撤退ラインを事前に決める**（`../00-business/exit-plan.md`）。
 
 ### 済んだこと
 
@@ -142,7 +142,7 @@ WMF理事会が閉鎖を決定。全言語版が read-only 化され、**過去3
 2. arXiv で拾うカテゴリを特定（cs.RO に加え cs.AI / cs.LG / cs.CV）
 3. 各サイトの robots.txt・利用規約を確認（Global Voices は **Crawl-delay: 10秒** を遵守）
 4. 既存パイプラインの**消費トークンを実測**し、原価1.74円の裏取り
-5. **撤退コストを下げる設計判断を確定**（年払いを出さない／コアとフィードの疎結合／エクスポート機能。`exit-plan.md` §3）
+5. **撤退コストを下げる設計判断を確定**（年払いを出さない／コアとフィードの疎結合／エクスポート機能。`../00-business/exit-plan.md` §3）
 
 ### 実装：★ 家族版を先に出す
 
@@ -161,13 +161,13 @@ Phase 1（マルチユーザー化）が**そのまま家族版として完成�
 
 **家族版まで：約1ヶ月・0円。有料公開まで：着手から約5〜6ヶ月**（うち2ヶ月は評価期間で費用0円）。
 
-> **家族版の時点で必ず作り込むもの**（後付けが困難）：RLS、全行の `user_id`、APIキーのEdge Function隔離、`usage_logs`、`subscriptions` テーブルと `plan` カラム、クォータ判定のコードパス、マイグレーション管理、エクスポート機能。詳細は `saas-migration-plan.md` §8.0.1。
+> **家族版の時点で必ず作り込むもの**（後付けが困難）：RLS、全行の `user_id`、APIキーのEdge Function隔離、`usage_logs`、`subscriptions` テーブルと `plan` カラム、クォータ判定のコードパス、マイグレーション管理、エクスポート機能。詳細は `../30-research/saas-migration-study.md` §8.0.1。
 
 ---
 
 ## 6.5 撤退ライン（要約）
 
-詳細は `docs/exit-plan.md`。
+詳細は `../00-business/exit-plan.md`。
 
 | 項目 | 内容 |
 |---|---|
@@ -176,7 +176,7 @@ Phase 1（マルチユーザー化）が**そのまま家族版として完成�
 | **退避先** | **Plan A：無料版として継続。月130円**（Supabase Free + Cloudflare Pages + Gemini従量） |
 | 原則 | **「事業の撤退」と「サービスの終了」は別物**。娘が使う限りコア機能は止めない |
 
-**最も重要なのは撤退ラインより、撤退コストを下げる事前の設計判断**（`exit-plan.md` §3）。特に**最初は年払いを出さない**こと。年払いがあると撤退時に残期間の返金債務を抱える。
+**最も重要なのは撤退ラインより、撤退コストを下げる事前の設計判断**（`../00-business/exit-plan.md` §3）。特に**最初は年払いを出さない**こと。年払いがあると撤退時に残期間の返金債務を抱える。
 
 ---
 
@@ -232,20 +232,20 @@ flowchart TB
 
 | 目的 | 読むもの |
 |---|---|
-| 今から実装する | `current-app-inventory.md` + `family-edition-spec.md` |
-| 事業版に進むとき | 上記 + `saas-diff-spec.md` |
-| なぜこの構成なのか | `saas-migration-plan.md` |
-| いくらにするか | `pricing-plan.md` |
-| いつ畳むか | `exit-plan.md` |
+| 今から実装する | `../10-specs/current-app-inventory.md` + `../10-specs/family-edition-spec.md` |
+| 事業版に進むとき | 上記 + `../10-specs/saas-diff-spec.md` |
+| なぜこの構成なのか | `../30-research/saas-migration-study.md` |
+| いくらにするか | `../00-business/pricing-plan.md` |
+| いつ畳むか | `../00-business/exit-plan.md` |
 
 ---
 
 ### 関連ドキュメント
 
-- `docs/current-app-inventory.md` — **現行機能の移植チェックリスト**
-- `docs/family-edition-spec.md` — **家族版の仕様書（実装着手可）**
-- `docs/saas-diff-spec.md` — **事業版の差分仕様書**
-- `docs/exit-plan.md` — 撤退ラインと最低コスト退避先
-- `docs/content-sources.md` — 情報源の評価と選定方針（Wikipedia含む詳細）
-- `docs/pricing-plan.md` — 料金プラン設計・原価計算・損益分岐
-- `docs/saas-migration-plan.md` — 移行設計書・DBスキーマ・ロードマップ・法務要件
+- `../10-specs/current-app-inventory.md` — **現行機能の移植チェックリスト**
+- `../10-specs/family-edition-spec.md` — **家族版の仕様書（実装着手可）**
+- `../10-specs/saas-diff-spec.md` — **事業版の差分仕様書**
+- `../00-business/exit-plan.md` — 撤退ラインと最低コスト退避先
+- `../30-research/content-sources.md` — 情報源の評価と選定方針（Wikipedia含む詳細）
+- `../00-business/pricing-plan.md` — 料金プラン設計・原価計算・損益分岐
+- `../30-research/saas-migration-study.md` — 移行設計書・DBスキーマ・ロードマップ・法務要件

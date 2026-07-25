@@ -1,6 +1,6 @@
 # 家族版（[[Supabase]] + [[PWA]]）
 
-`docs/family-edition-spec.md` の実装。**記事フィードと課金は含まない**。
+`../../docs/10-specs/family-edition-spec.md` の実装。**記事フィードと課金は含まない**。
 
 ```
 family/

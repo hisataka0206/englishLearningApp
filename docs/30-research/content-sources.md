@@ -21,7 +21,7 @@
 | ★3 | **政府系プレスリリース** | CC BY 4.0 / OGL3 / PDL1.0 / PD | なし | RSS（要確認） | EU は多言語で同一内容が出る。対訳教材化しやすい |
 | 補助 | Wikipedia | CC BY-SA 4.0 | **あり** | MediaWiki API | 語彙・固有名詞の背景説明に限定して使う |
 
-**取得手段がすべてRSSまたは公式APIのため、スクレイピングサービス（Firecrawl等）は不要の見込み。** これは固定費を月2,400円下げ、損益分岐点を13人→10人にする（`pricing-plan.md` §4）。**Global Voices のRSS提供状況の確認が最優先事項。**
+**取得手段がすべてRSSまたは公式APIのため、スクレイピングサービス（Firecrawl等）は不要の見込み。** これは固定費を月2,400円下げ、損益分岐点を13人→10人にする（`../00-business/pricing-plan.md` §4）。**Global Voices のRSS提供状況の確認が最優先事項。**
 
 ---
 
@@ -210,7 +210,7 @@ CC公式FAQ は adaptation（翻案）の例として**翻訳を明示的に挙�
 
 ### 3.1 Weibo（微博）— 規約上、共有プール設計と矛盾
 
-**本節が Weibo に関する正典**（`pricing-plan.md` §10.1 は本節の要約）。
+**本節が Weibo に関する正典**（`../00-business/pricing-plan.md` §10.1 は本節の要約）。
 
 - 開発者協議 2.7.7「APIで取得したデータは接続したアプリにのみ供され、**その他いかなる用途にも使用してはならない**」
 - 「**第三者のサーバサイドでのユーザーデータ保存を禁止**」→ 共有プール設計と真っ向から矛盾
@@ -367,7 +367,7 @@ CC BY-**ND** のため、語彙置換・リライト・難易度調整といっ�
 
 ### 関連ドキュメント
 
-- `docs/status-summary.md` — 検討の現況整理
-- `docs/exit-plan.md` — 撤退ラインと最低コスト退避先
-- `docs/pricing-plan.md` — 料金プラン設計・原価計算
-- `docs/saas-migration-plan.md` — 移行設計書・アーキテクチャ
+- `../20-plans/status-summary.md` — 検討の現況整理
+- `../00-business/exit-plan.md` — 撤退ラインと最低コスト退避先
+- `../00-business/pricing-plan.md` — 料金プラン設計・原価計算
+- `saas-migration-study.md` — 移行設計書・アーキテクチャ

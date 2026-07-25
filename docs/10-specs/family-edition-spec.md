@@ -4,7 +4,7 @@
 対象: Supabase + PWA のマルチユーザー版（**記事フィードと課金を含まない**）
 
 > **本書だけで実装できることを目標とする。** 事業版の要素は意図的に除外している。
-> 移植対象の機能一覧は `docs/current-app-inventory.md` を参照（本書と対で使う）。
+> 移植対象の機能一覧は `current-app-inventory.md` を参照（本書と対で使う）。
 
 ---
 
@@ -493,7 +493,7 @@ create policy "own read" on usage_logs    for select using (auth.uid() = user_id
 | 翻訳 | `gemini-2.5-flash-lite` | 0.015円/文の試算根拠 |
 | キーワード抽出 | `gemini-2.5-flash-lite` | 同上 |
 
-**家族版の2ヶ月で実測し、`usage_logs` から原価を確定させる**（`saas-migration-plan.md` §8.0.2）。
+**家族版の2ヶ月で実測し、`usage_logs` から原価を確定させる**（`../30-research/saas-migration-study.md` §8.0.2）。
 
 ---
 
@@ -714,7 +714,7 @@ create policy "own read" on usage_logs    for select using (auth.uid() = user_id
 
 ## 14. 事業版との関係
 
-本書は**事業版のベースライン**でもある。事業版は本書に対する差分として `docs/saas-diff-spec.md` に記述されている。
+本書は**事業版のベースライン**でもある。事業版は本書に対する差分として `saas-diff-spec.md` に記述されている。
 
 ```mermaid
 flowchart LR
@@ -747,8 +747,8 @@ flowchart LR
 
 ### 関連ドキュメント
 
-- `docs/current-app-inventory.md` — **移植チェックリスト（本書と対で使う）**
-- `docs/saas-diff-spec.md` — **事業版の差分仕様書（本書がベースライン）**
-- `docs/status-summary.md` — 検討の現況整理
-- `docs/saas-migration-plan.md` — 事業版の背景・意思決定・法務要件
-- `docs/exit-plan.md` — 撤退ラインと退避先
+- `current-app-inventory.md` — **移植チェックリスト（本書と対で使う）**
+- `saas-diff-spec.md` — **事業版の差分仕様書（本書がベースライン）**
+- `../20-plans/status-summary.md` — 検討の現況整理
+- `../30-research/saas-migration-study.md` — 事業版の背景・意思決定・法務要件
+- `../00-business/exit-plan.md` — 撤退ラインと退避先

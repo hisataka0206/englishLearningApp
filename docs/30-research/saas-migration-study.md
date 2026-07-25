@@ -13,12 +13,12 @@
 >
 > | 用途 | 正典 |
 > |---|---|
-> | 現行機能の移植チェックリスト | **`docs/current-app-inventory.md`** |
-> | 家族版の実装仕様 | **`docs/family-edition-spec.md`** |
-> | 事業版の差分仕様 | **`docs/saas-diff-spec.md`** |
-> | 情報源・ライセンス | `docs/content-sources.md` |
-> | 料金・原価 | `docs/pricing-plan.md` |
-> | 撤退 | `docs/exit-plan.md` |
+> | 現行機能の移植チェックリスト | **`../10-specs/current-app-inventory.md`** |
+> | 家族版の実装仕様 | **`../10-specs/family-edition-spec.md`** |
+> | 事業版の差分仕様 | **`../10-specs/saas-diff-spec.md`** |
+> | 情報源・ライセンス | `content-sources.md` |
+> | 料金・原価 | `../00-business/pricing-plan.md` |
+> | 撤退 | `../00-business/exit-plan.md` |
 >
 > **本書に残る固有の価値**：§2（提供形態の比較）§3（認証基盤の比較）§10（法務要件）§11（リスク）。
 > これらは他文書に重複がない。
@@ -38,14 +38,14 @@
 | 認証・DB | [[Supabase]]（Auth + Postgres + [[RLS]]） | 認証・DB・行レベルセキュリティが一体。個人開発の最短ルート |
 | 課金 | [[Stripe]] Billing（実効手数料 4.3%） | ストア課金の1/4以下 |
 | 音声 | [[Web Speech API]]（現状維持） | **クラウドTTSを使わないことが最大の原価優位**。ここは変えない |
-| 情報源 | [[Global Voices]] 40% / [[arXiv]] 30% / 政府系PR 20% / Wikipedia補助 10% | **すべて [[ShareAlike]] なし**。詳細は `docs/content-sources.md` |
+| 情報源 | [[Global Voices]] 40% / [[arXiv]] 30% / 政府系PR 20% / Wikipedia補助 10% | **すべて [[ShareAlike]] なし**。詳細は `content-sources.md` |
 
 **収益モデル**：作文・翻訳・発音は**無料（月150文の上限あり）**。有料機能は「**興味キーワードから学習教材が自動生成される[[記事フィード]]**」。
-**損益分岐点：有料会員 10人**（8:2混在なら9人。詳細は `pricing-plan.md`）。
+**損益分岐点：有料会員 10人**（8:2混在なら9人。詳細は `../00-business/pricing-plan.md`）。
 
 > ⚠️ **重要①**：情報源として [[Weibo]] を使う設計は成立しない。規約が「API取得データの他用途利用」「第三者サーバーでの保存」を明示禁止しており、共有プール設計と真っ向から矛盾する。
 > ⚠️ **重要②**：Wikipedia は **CC BY-SA（ShareAlike）** のため主軸には使えない。翻案物を CC BY-SA で提供する義務が生じ、利用規約に「無断転載禁止」が書けなくなる。補助（言語間リンクによる対訳語彙生成）に限定する。
-> **情報源に関する正典は `docs/content-sources.md`。**
+> **情報源に関する正典は `content-sources.md`。**
 
 ---
 
@@ -209,7 +209,7 @@
 
 ## 5. データベース設計
 
-> ⚠️ **正典は移譲済み。** 家族版のスキーマとRLS全文は `docs/family-edition-spec.md` §5、事業版の差分は `docs/saas-diff-spec.md` §2 を参照。
+> ⚠️ **正典は移譲済み。** 家族版のスキーマとRLS全文は `../10-specs/family-edition-spec.md` §5、事業版の差分は `../10-specs/saas-diff-spec.md` §2 を参照。
 > 以下は設計の経緯として残す。**§5.1b の記事フィード7テーブルの定義文は事業版の正典**（差分仕様書から参照されている）。
 
 ### 5.1 スキーマ
@@ -449,7 +449,7 @@ create index on lesson_requests (user_id, created_at desc);
   → Free: 月150文 / Standard: 月1,500文 / Pro: 月3,000文 を超えたら 402 を返す
 ```
 
-**Free の月150文は必須**。無制限にすると有料1,000人規模で月293,000円の持ち出しになる（`pricing-plan.md` §5）。
+**Free の月150文は必須**。無制限にすると有料1,000人規模で月293,000円の持ち出しになる（`../00-business/pricing-plan.md` §5）。
 
 ### 5.2 RLSポリシー（全テーブル共通の型）
 
@@ -472,7 +472,7 @@ create policy "own rows" on sentences
 
 ## 6. API設計（現行との対応）
 
-> ⚠️ **正典は移譲済み。** 家族版のEdge Function契約（入出力JSON・エラーコード）は `docs/family-edition-spec.md` §6、事業版の追加12本は `docs/saas-diff-spec.md` §3 を参照。
+> ⚠️ **正典は移譲済み。** 家族版のEdge Function契約（入出力JSON・エラーコード）は `../10-specs/family-edition-spec.md` §6、事業版の追加12本は `../10-specs/saas-diff-spec.md` §3 を参照。
 > 以下は現行APIとの対応関係を示す参考表。
 
 | 現行 | 移行後 | 備考 |
@@ -504,7 +504,7 @@ create policy "own rows" on sentences
 
 ## 7. 新規に必要な画面
 
-> ⚠️ **正典は移譲済み。** 家族版の画面とURL設計は `docs/family-edition-spec.md` §4、事業版の追加11画面・変更2画面は `docs/saas-diff-spec.md` §4 を参照。
+> ⚠️ **正典は移譲済み。** 家族版の画面とURL設計は `../10-specs/family-edition-spec.md` §4、事業版の追加11画面・変更2画面は `../10-specs/saas-diff-spec.md` §4 を参照。
 > 本節の「必須度」列は**事業版としての必須度**であり、家族版には適用されない。
 
 ### 7.1 記事フィード（商品価値の本体）
@@ -604,14 +604,14 @@ create policy "own rows" on sentences
 
 ### Phase -1：前提の確定（1週間）
 
-> **方針変更**：需要検証（LP事前登録）と目利きの一致率テストは**実施しない**。投資コストが低いため、作って出して、ダメなら畳む。代わりに**撤退ラインを事前に決める**（`docs/exit-plan.md`）。
+> **方針変更**：需要検証（LP事前登録）と目利きの一致率テストは**実施しない**。投資コストが低いため、作って出して、ダメなら畳む。代わりに**撤退ラインを事前に決める**（`../00-business/exit-plan.md`）。
 
 - [x] **Global Voices の実地確認**（完了。**中国語版が停止していることが判明** → `content-sources.md` §2.1）
 - [ ] **中国語ソースの方針決定** — アーカイブ教材で割り切る／台湾政府系を調査／英語のみで出す（`content-sources.md` §3.5）
 - [ ] arXiv で拾うカテゴリを特定（cs.RO に加え cs.AI / cs.LG / cs.CV）
 - [ ] 各サイトの robots.txt・利用規約を確認（Global Voices は **Crawl-delay: 10秒**）
 - [ ] 既存パイプラインの**消費トークンを実測**し、原価1.74円の裏取り
-- [ ] **撤退コストを下げる設計判断を確定**（`docs/exit-plan.md` §3）
+- [ ] **撤退コストを下げる設計判断を確定**（`../00-business/exit-plan.md` §3）
 
 **供給量についての結論**
 
@@ -655,7 +655,7 @@ create policy "own rows" on sentences
 
 ### Phase 1.5：記事フィード機能（2〜3週間）★ 商品価値の本体
 
-> ⚠️ **コアと疎結合に保つこと**（`docs/exit-plan.md` §3.2）
+> ⚠️ **コアと疎結合に保つこと**（`../00-business/exit-plan.md` §3.2）
 > 撤退時は「pg_cron を止める」「フィード系画面をフラグで隠す」の2操作で済む状態を維持する。
 > **依存はフィード→コアの一方向に限定**し、`sentences` 等のコアテーブルがフィード側を参照しないようにする。
 
@@ -672,7 +672,7 @@ create policy "own rows" on sentences
 
 **① 情報源の自動収集**
 
-確定した情報源構成（詳細は `docs/content-sources.md` §4）:
+確定した情報源構成（詳細は `content-sources.md` §4）:
 
 | 役割 | ソース | ライセンス | 比率 |
 |---|---|---|---|
@@ -697,7 +697,7 @@ create policy "own rows" on sentences
 **③④ 既存パイプラインの移植**
 
 - [ ] Notion運用の生成プロンプトをEdge Functionへ移植
-- [ ] **要約型 → 書き下ろし型への改修**（有料配信では要約は翻案リスク。`pricing-plan.md` §10.2）
+- [ ] **要約型 → 書き下ろし型への改修**（有料配信では要約は翻案リスク。`../00-business/pricing-plan.md` §10.2）
 - [ ] 難易度・長さの指定パラメータを追加（改修の副産物。Proの機能になる）
 - [ ] **帰属表示の自動生成**（`sources.attribution_template` から記事冒頭・末尾に埋め込む）
 - [ ] **実際の消費トークンを `usage_logs` に記録し、原価試算を実測値に差し替える**
@@ -712,7 +712,7 @@ create policy "own rows" on sentences
 
 ### Phase 2：課金（1〜2週間）
 
-> ⚠️ **撤退コストを下げる設計判断を守ること**（`docs/exit-plan.md` §3）
+> ⚠️ **撤退コストを下げる設計判断を守ること**（`../00-business/exit-plan.md` §3）
 > - **年払いは出さない。最初の6ヶ月は月額のみ。** 年払いがあると撤退時に残期間の返金債務を抱える
 > - Stripe Customer Portal を有効にし、**全サブスクを一括キャンセルできる状態**にしておく
 > - 利用規約に**サービス終了条項（30日前告知・最終月は課金しない）を最初から**入れる
@@ -848,7 +848,7 @@ create policy "own rows" on sentences
 
 ### 10.5 著作権・ライセンス順守
 
-**この項目は `docs/content-sources.md` が正典。** 実装上の必須要件のみここに再掲する。
+**この項目は `content-sources.md` が正典。** 実装上の必須要件のみここに再掲する。
 
 **基本方針：[[AI書き下ろし型]]**。元記事の要約ではなく、複数ソースから事実だけ抽出して学習用テキストをオリジナルで構成する。現行のNotion運用は要約型のため、**商用転用にあたり改修が必要**。
 
@@ -900,16 +900,16 @@ create policy "own rows" on sentences
 5. 自分のデータを移行し、**娘のアカウントを作って使い始める**
 6. 2ヶ月使い、実測データを見てから収益化を判断する
 
-**着手前に確定しておくこと**：`exit-plan.md` §3 の設計判断（特に**コアと記事フィードの疎結合**。家族版の時点でコアだけを作るので自然に守られる）。
+**着手前に確定しておくこと**：`../00-business/exit-plan.md` §3 の設計判断（特に**コアと記事フィードの疎結合**。家族版の時点でコアだけを作るので自然に守られる）。
 
 ---
 
 ### 関連ドキュメント
 
-- `docs/current-app-inventory.md` — 現行機能の移植チェックリスト
-- `docs/family-edition-spec.md` — **家族版の実装仕様（正典）**
-- `docs/saas-diff-spec.md` — **事業版の差分仕様（正典）**
-- `docs/status-summary.md` — 検討の現況整理
-- `docs/exit-plan.md` — 撤退ラインと最低コスト退避先（**§3の設計判断は実装前に確定させること**）
-- `docs/content-sources.md` — 情報源の評価と選定方針（**情報源・ライセンスに関する正典**）
-- `docs/pricing-plan.md` — 料金プラン設計・原価計算・損益分岐点
+- `../10-specs/current-app-inventory.md` — 現行機能の移植チェックリスト
+- `../10-specs/family-edition-spec.md` — **家族版の実装仕様（正典）**
+- `../10-specs/saas-diff-spec.md` — **事業版の差分仕様（正典）**
+- `../20-plans/status-summary.md` — 検討の現況整理
+- `../00-business/exit-plan.md` — 撤退ラインと最低コスト退避先（**§3の設計判断は実装前に確定させること**）
+- `content-sources.md` — 情報源の評価と選定方針（**情報源・ライセンスに関する正典**）
+- `../00-business/pricing-plan.md` — 料金プラン設計・原価計算・損益分岐点
