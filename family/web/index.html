@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/manifest.json">
+<title>English Learning</title>
+<style>
+  :root { --bg:#f5f6fa; --card:#fff; --accent:#4a6cf7; --ok:#1a9c5d; --ng:#d64545; --muted:#8a90a0; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Hiragino Sans",sans-serif; background:var(--bg); color:#222; padding-bottom:40px; }
+  header { background:var(--accent); color:#fff; padding:14px 16px; font-size:18px; font-weight:700;
+    display:flex; justify-content:space-between; align-items:center; }
+  main { max-width:640px; margin:0 auto; padding:12px; }
+  .card { background:var(--card); border-radius:14px; padding:14px; margin-bottom:14px; box-shadow:0 1px 4px rgba(0,0,0,.07); }
+  textarea, input[type=text], input[type=email], input[type=password] {
+    width:100%; font-size:16px; border:1px solid #d8dce6; border-radius:10px; padding:10px; }
+  textarea { min-height:84px; resize:vertical; }
+  button { border:0; border-radius:10px; padding:10px 16px; font-size:15px; cursor:pointer; }
+  .primary { background:var(--accent); color:#fff; }
+  .ghost { background:#eef1f8; color:#333; }
+  .small { padding:6px 10px; font-size:13px; border-radius:8px; }
+  button:disabled { opacity:.45; }
+  .row { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; align-items:center; }
+  #english { font-size:19px; line-height:1.5; min-height:28px; border:1px dashed transparent; border-radius:8px; padding:4px; }
+  #english:focus { outline:none; border-color:var(--accent); background:#f8faff; }
+  .kw { display:flex; align-items:center; gap:8px; padding:7px 4px; border-bottom:1px solid #f0f1f5; font-size:15px; }
+  .kw:last-child { border-bottom:0; }
+  .kw .m { color:var(--muted); font-size:13px; }
+  .badge { background:#fdecec; color:var(--ng); border-radius:8px; font-size:12px; padding:2px 8px; }
+  .msg { font-size:13px; margin-top:8px; min-height:16px; }
+  .msg.ok { color:var(--ok); } .msg.ng { color:var(--ng); }
+  h2 { font-size:14px; color:var(--muted); margin:0 0 8px; font-weight:600; }
+  select { font-size:13px; padding:6px; border-radius:8px; border:1px solid #d8dce6; }
+  label.rate { font-size:13px; color:var(--muted); }
+  .sub { color:var(--muted); font-size:12px; }
+  .tab { background:#eef1f8; }
+  .tab.active { background:var(--accent); color:#fff; }
+  .htable { width:100%; border-collapse:collapse; margin-top:6px; }
+  .htable th { text-align:left; font-size:11px; color:var(--muted); padding:4px; border-bottom:2px solid #e2e5ee; font-weight:600; }
+  .htable td { padding:7px 4px; border-bottom:1px solid #f0f1f5; vertical-align:top; font-size:14px; }
+  .dateh { font-size:13px; font-weight:700; color:var(--accent); margin:14px 0 0; border-left:3px solid var(--accent); padding-left:6px; }
+  .seclabel { font-size:11px; color:var(--muted); margin:6px 0 0; }
+  .icon { padding:4px 8px; font-size:14px; border-radius:8px; background:#eef1f8; border:0; cursor:pointer; }
+  .navb { background:rgba(255,255,255,.2); color:#fff; font-size:15px; padding:8px 10px; border-radius:10px; border:0; cursor:pointer; }
+  .langsel { display:flex; gap:8px; margin-bottom:12px; }
+  .langsel button { flex:1; padding:12px; font-size:16px; font-weight:700; border:2px solid #d8dce6;
+    background:#fff; color:#555; border-radius:12px; cursor:pointer; }
+  .langsel button.active { border-color:var(--accent); background:var(--accent); color:#fff; }
+  #player { position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:2px solid var(--accent);
+    box-shadow:0 -2px 10px rgba(0,0,0,.12); padding:10px 12px 14px; display:none; z-index:10; }
+  #player .inner { max-width:640px; margin:0 auto; }
+  #phrases { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;
+    max-height:24vh; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  .chip { background:#eef1f8; border-radius:16px; padding:6px 12px; font-size:14px; cursor:pointer; text-align:center; }
+  .chip.active { background:var(--accent); color:#fff; }
+  .chip.done { background:#d7e3ff; }
+  .chip .cpy { font-size:10px; opacity:.7; }
+  .cgrid { display:flex; flex-wrap:wrap; align-items:flex-end; margin:4px 0 6px; }
+  .cchar { display:inline-flex; flex-direction:column; align-items:center; padding:1px 2px; border-radius:6px;
+    -webkit-user-select:none; user-select:none; }
+  .cchar .py { font-size:11px; color:var(--accent); line-height:1.2; min-height:13px; }
+  .cchar .hz { font-size:22px; line-height:1.25; }
+  .cgap { width:3px; align-self:stretch; border-radius:3px; margin:0 1px; }
+  .cgap.brk { background:var(--accent); }
+  .cgrid.editbreaks .cgap { width:22px; cursor:pointer; background:#eef1f8; position:relative; }
+  .cgrid.editbreaks .cgap::after { content:"｜"; color:#b8c0d8; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); }
+  .cgrid.editbreaks .cgap.brk { background:var(--accent); }
+  .cgrid.editbreaks .cgap.brk::after { content:"✂"; color:#fff; font-size:11px; }
+  .cgrid.editbreaks .cchar { opacity:.75; }
+  .loginbox { max-width:340px; margin:12vh auto; }
+</style>
+</head>
+<body>
+
+<header id="appHeader" style="display:none">English Learning
+  <div style="display:flex;align-items:center;gap:8px">
+    <span id="who" style="font-size:12px;font-weight:400;opacity:.9"></span>
+    <button class="navb" id="navHistory">📜</button>
+    <button class="navb" id="navSettings">⚙</button>
+    <button class="navb" id="navReload">⟳</button>
+  </div>
+</header>
+
+<main>
+<!-- ============================================ ログイン -->
+<div id="viewLogin" style="display:none">
+  <div class="card loginbox">
+    <h2>ログイン</h2>
+    <form id="loginForm">
+      <input type="email" id="email" placeholder="メールアドレス" autocomplete="username" required>
+      <div style="height:8px"></div>
+      <input type="password" id="password" placeholder="パスワード" autocomplete="current-password" required>
+      <div class="row"><button class="primary" type="submit" style="flex:1">ログイン</button></div>
+    </form>
+    <div class="msg" id="msgLogin"></div>
+  </div>
+</div>
+
+<!-- ============================================ メイン -->
+<div id="viewMain" style="display:none">
+  <div class="langsel">
+    <button id="lang_en">🇺🇸 英語</button>
+    <button id="lang_zh">🇨🇳 中国語</button>
+  </div>
+  <div class="row" style="margin-bottom:10px">
+    <button class="tab small active" id="sub_compose">作成</button>
+    <button class="tab small" id="sub_history">履歴</button>
+  </div>
+
+  <div id="subCompose">
+    <div class="card">
+      <textarea id="ja" placeholder="言いたいことを日本語で入力"></textarea>
+      <div class="row"><button class="primary" id="btnTr">英語にする</button></div>
+      <div class="msg" id="msgTr"></div>
+    </div>
+
+    <div class="card" id="resultCard" style="display:none">
+      <h2 id="transHead">英訳 ✏️</h2>
+      <div id="english" contenteditable="true"></div>
+      <div id="pinyin" class="sub" style="margin-top:2px"></div>
+      <div id="breakGrid" style="display:none"></div>
+      <div class="row">
+        <button class="ghost" id="btnSpeak" title="発音">🔊</button>
+        <button class="small tab" id="btnMainBreak">✂️ 区切り編集</button>
+        <button class="primary" id="btnSave" title="保存">💾</button>
+      </div>
+      <div id="kwBox" style="margin-top:10px"></div>
+      <div class="row" id="kwActions" style="display:none">
+        <button class="ghost" id="btnWords">＋ 単語登録</button>
+      </div>
+      <div class="msg" id="msgSave"></div>
+    </div>
+  </div>
+
+  <div id="subHistory" style="display:none">
+    <div class="card">
+      <h2>履歴</h2>
+      <div class="row" style="margin-top:4px;align-items:center">
+        <button class="small tab active" id="tab_date">日付別</button>
+        <button class="small tab" id="tab_sent">英文のみ</button>
+        <button class="small tab" id="tab_word">単語のみ</button>
+        <input type="text" id="hFilter" placeholder="検索" style="flex:1;min-width:80px;font-size:13px;padding:6px">
+      </div>
+      <div id="history">読み込み中…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================ 設定 -->
+<div id="viewSettings" style="display:none">
+  <div class="card">
+    <h2><button class="small ghost" id="btnBackMain">←</button> アカウント設定</h2>
+    <div class="row"><label class="sub" style="width:90px">表示名</label>
+      <input type="text" id="setName" style="flex:1"></div>
+    <div class="row"><label class="sub" style="width:90px">既定の言語</label>
+      <select id="setLang"><option value="en">英語</option><option value="zh">中国語</option></select></div>
+    <div class="row"><label class="sub" style="width:90px">発音の速さ</label>
+      <input type="number" id="setRate" min="0.4" max="1.5" step="0.05" style="width:90px"></div>
+    <div class="row"><label class="sub" style="width:90px">区切り</label>
+      <select id="setSplit">
+        <option value="fine">細かめ</option><option value="normal">ふつう</option><option value="sentence">文単位</option>
+      </select></div>
+  </div>
+  <div class="card">
+    <h2>家族の最終利用日</h2>
+    <div id="family"></div>
+  </div>
+  <div class="card">
+    <div class="row">
+      <button class="ghost" id="btnExport">⬇ エクスポート（Markdown）</button>
+      <button class="ghost" id="btnLogout" style="margin-left:auto">ログアウト</button>
+    </div>
+  </div>
+</div>
+</main>
+
+<!-- ============================================ プレイヤー -->
+<div id="player"><div class="inner">
+  <div id="phrases"></div>
+  <div class="row" style="margin-top:0;align-items:center">
+    <label class="rate">🔊 速さ <input type="range" id="rate" min="0.4" max="1.5" step="0.05" value="0.9"
+      style="width:110px;vertical-align:middle"> <b id="rateVal">0.9</b>x</label>
+    <button class="small ghost" data-rate="0.6">ゆっくり</button>
+    <button class="small ghost" data-rate="0.9">ふつう</button>
+    <button class="small ghost" data-rate="1.2">速い</button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button class="primary" id="btnPlay">⏸ 一時停止</button>
+    <button class="ghost" id="btnRestart">⏮ 最初から</button>
+    <select id="splitMode">
+      <option value="normal">区切り: ふつう</option>
+      <option value="fine">区切り: 細かめ</option>
+      <option value="sentence">区切り: 文単位</option>
+    </select>
+    <button class="ghost" id="btnCloseP" style="margin-left:auto">✕</button>
+  </div>
+</div></div>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
