@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.37.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.37.1"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -1131,7 +1131,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"ok": False, "error": "not found"})
 
     def do_POST(self):
-        if self.path.startswith("/api/assess"):
+        # ★前方一致にすると /api/assessments/clear まで飲み込むため、パスは完全一致で見る
+        if self.path.split("?")[0] == "/api/assess":
             return self._handle_assess()
         try:
             body = self._json_body()

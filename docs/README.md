@@ -13,6 +13,7 @@
 | 事業版で何が増えるのか | `10-specs/saas-diff-spec.md` |
 | どの順で進めるのか | `20-plans/execution-plan.md` |
 | 家族版で何を測るのか | `20-plans/family-evaluation-plan.md` |
+| 仕様と実装が合っているか | `40-tests/test-report.md`（結果）／`40-tests/test-spec.md`（何を試すか） |
 | 情報源とライセンス | `30-research/content-sources.md`（**正典**） |
 | なぜこの技術構成なのか | `30-research/saas-migration-study.md` |
 
@@ -42,10 +43,16 @@ docs/
 │   ├── family-evaluation-plan.md 家族版の評価計画書
 │   └── status-summary.md         検討の現況整理（経緯のログ）
 │
-└── 30-research/     調査 — なぜそう判断したか
-    ├── content-sources.md        情報源の評価・ライセンス（正典）
-    └── saas-migration-study.md   技術選定の比較検討・法務・DB設計
+├── 30-research/     調査 — なぜそう判断したか
+│   ├── content-sources.md        情報源の評価・ライセンス（正典）
+│   └── saas-migration-study.md   技術選定の比較検討・法務・DB設計
+│
+└── 40-tests/        検証 — 仕様どおり動くか
+    ├── test-spec.md              テスト仕様書（L1〜L3の自動＋L5手動）
+    └── test-report.md            テスト結果報告書
 ```
+
+実行コードは `tests/`（`python3 tests/run_all.py`）。
 
 ---
 

@@ -7,3 +7,6 @@ drive_token.json
 cert.pem
 key.pem
 recordings/
+
+# テストの実行時生成物
+tests/last_results.json

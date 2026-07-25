@@ -1,6 +1,6 @@
 # 現行アプリ仕様書（`apps/local`）
 
-対象: `apps/local/`（Mac常駐版・**稼働中**） / 現行バージョン: v1.37.0（画面右上に表示）
+対象: `apps/local/`（Mac常駐版・**稼働中**） / 現行バージョン: v1.37.1（画面右上に表示）
 最終更新: 2026-07-26
 
 > **本書の位置づけ** — 現行アプリについての**唯一の仕様書**。
@@ -494,10 +494,10 @@ const speakNext = () => {
 | `POST /api/pinyin` | texts[] | `{pinyins[], pairs[], words[]}`<br>`pairs`=[文字,拼音]の列 / **`words`=jieba分かち書き**（§3.3が依存） | **変更**（クライアント処理にするなら分かち書きの代替が要る） |
 | `POST /api/sentences` | japanese, english, marked, memo?, lang, **id?** | `{id}` / `{id, updated:true}` | Supabase SDK |
 | `POST /api/words` | word, meaning, example, source_id, lang | `{id}` | Supabase SDK |
-| `POST /api/words/delete` | id | `{deleted}` | Supabase SDK |
+| `POST /api/words/delete` | id | `{deleted: 削除したid}`（真偽値ではない） | Supabase SDK |
 | `POST /api/fail` | id, label | `{fail_count}` | Supabase SDK |
 | `POST /api/practice` | id | `{practice_count, last_practiced}` | Supabase SDK |
-| `POST /api/delete` | id | `{deleted}` | Supabase SDK |
+| `POST /api/delete` | id | `{deleted: 削除したid}`（真偽値ではない） | Supabase SDK |
 
 ### 発音評価・記録のAPI（機能一覧は §6.5）
 
