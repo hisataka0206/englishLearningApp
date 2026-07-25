@@ -49,12 +49,13 @@ supabase login
 supabase link --project-ref <PROJECT_REF>
 
 # APIキーはここにのみ置く（クライアントには絶対に出さない）
-supabase secrets set GEMINI_API_KEY=xxxxx
+# ↓ 値は下の「キーの取得元」を参照。手で打たずコピペする
+supabase secrets set GEMINI_API_KEY=<GOOGLE_API_KEY>
 supabase secrets set GEMINI_MODEL=gemini-2.5-flash-lite
 supabase secrets set MAX_INPUT_CHARS=300
 
-# 発音評価（現行アプリの config.json の azure と同じ値）
-supabase secrets set AZURE_SPEECH_KEY=xxxxx
+# 発音評価
+supabase secrets set AZURE_SPEECH_KEY=<azure.key>
 supabase secrets set AZURE_SPEECH_REGION=japaneast
 supabase secrets set AZURE_SPEECH_TIER=f0        # 無料枠。S0にしたら s0 に変える
 
@@ -63,8 +64,21 @@ supabase functions deploy keywords
 supabase functions deploy assess
 ```
 
-Gemini APIキーは [Google AI Studio](https://aistudio.google.com/apikey) で取得。
-Azureのキーは現行の `config.json` の `azure.key` / `azure.region` をそのまま使える。
+### キーの取得元（既に手元にある）
+
+| Secret | 取得元 | 備考 |
+|---|---|---|
+| `GEMINI_API_KEY` | `~/work/humanoidAsAService/Tools/translateChineseWebpage/.env` の **`GOOGLE_API_KEY`** | [[AI Studio]] 発行。インフォグラフィック生成（Nano Banana）と共用 |
+| `AZURE_SPEECH_KEY` / `AZURE_SPEECH_REGION` | `~/work/englishLearningApp/apps/local/config.json` の **`azure.key` / `azure.region`** | 現行アプリが使っているものと同じ |
+
+いずれも `.gitignore` 済み。新規発行するなら Gemini は [Google AI Studio](https://aistudio.google.com/apikey)。
+
+> **⚠️ `GOOGLE_API_KEY` を共用する場合の注意**
+> このキーは humanoidAsAService 側の画像生成（プリペイド課金）でも使っている。
+> **家族版の翻訳と課金が同じキーに混ざるため、`usage_logs` の実測とAPIコンソールの請求額が一致しなくなる。**
+> 原価の実測（GO/NO-GO 条件C）を正確にやるなら、**家族版専用のキーを新規発行するのが望ましい**。
+>
+> **⚠️ Azureキーは一度チャットに貼られている。** 再発行を推奨（Azure ポータル → キーの再生成。`config.json` と Supabase Secrets の両方を更新すること）。
 
 > **Azure は F0（無料枠）で運用する。** 月5時間・**同時リクエスト1件**（調整不可）。
 > 家族が同時に録音すると429になるため、Edge Function 側で2回まで再試行する。
