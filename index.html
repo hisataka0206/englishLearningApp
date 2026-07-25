@@ -192,6 +192,7 @@
   <div class="row" style="margin-bottom:10px">
     <button class="tab small active" id="rtab_weak" onclick="setRecTab('weak')">苦手</button>
     <button class="tab small" id="rtab_hist" onclick="setRecTab('hist')">履歴</button>
+    <button class="small ghost" style="margin-left:auto" onclick="clearRecords()" title="この言語の記録を全部消す">🗑</button>
   </div>
   <div class="card"><div id="recordBody">読み込み中…</div></div>
 </div>
@@ -812,6 +813,16 @@ function setRecTab(t) {
   loadRecord();
 }
 
+async function clearRecords() {
+  const name = recLang === "zh" ? "中国語" : "英語";
+  if (!confirm(`${name}の発音記録をすべて削除しますか？`)) return;
+  try {
+    const d = await api("/api/assessments/clear", { lang: recLang });
+    await loadRecord();
+    alert(`${d.deleted}件の記録を削除しました`);
+  } catch(e) { alert(e.message); }
+}
+
 async function loadRecord() {
   const box = document.getElementById("recordBody");
   document.getElementById("rlang_en").classList.toggle("active", recLang === "en");
@@ -825,7 +836,7 @@ async function loadRecord() {
 
 function weakTable(list) {
   let h = `<table class="htable wtbl"><tr>
-    <th>語</th><th>ミスの種類</th><th>平均</th><th>ミス</th><th>最終</th></tr>`;
+    <th>語</th><th>ミスの種類</th><th>ミス(30日)</th><th>最終</th></tr>`;
   list.forEach(w => {
     const label = w.pairs ? rubyHTML(w.pairs, w.word) : esc(w.word);
     let kind = "-";
@@ -843,8 +854,7 @@ function weakTable(list) {
       <td><span class="wword">${label}</span>
         <button class="icon" onclick="speak('${w.word.replace(/'/g, "\\'")}')">🔊</button></td>
       <td>${kind}</td>
-      <td style="color:${scoreColor(w.avg)};font-weight:700">${w.avg}</td>
-      <td class="sub">${w.miss}/${w.tries}</td>
+      <td style="white-space:nowrap"><b style="color:${w.rate >= 50 ? "var(--ng)" : "inherit"}">${w.miss}</b><span class="sub">/${w.tries}</span></td>
       <td class="sub" style="white-space:nowrap">${(w.last || "").slice(5)}</td></tr>`;
   });
   return h + "</table>";

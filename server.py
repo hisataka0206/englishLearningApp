@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.36.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.37.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -479,11 +479,13 @@ def list_assessments(lang="zh", limit=50):
     return out, None
 
 
-def weak_words(lang="zh", limit=60):
-    """単語ごとにミス率を集計して苦手順に返す。"""
+def weak_words(lang="zh", limit=60, days=30):
+    """直近days日の記録から、単語ごとのミスを集計して苦手順に返す。"""
+    from datetime import timedelta
+    since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     stat = {}
     for a in _load("assessments.json"):
-        if a.get("lang") != lang:
+        if a.get("lang") != lang or a.get("time", "")[:10] < since:
             continue
         for w in a.get("words", []):
             if w.get("e") == "Omission":
@@ -535,8 +537,18 @@ def weak_words(lang="zh", limit=60):
         if lang == "zh":  # 文字の上に拼音を出すための対応表
             s["pairs"] = to_pinyin_pairs(s["word"])
         out.append(s)
-    out.sort(key=lambda x: (-x["miss"], x["avg"]))
+    out.sort(key=lambda x: (-x["miss"], -x["rate"]))
     return out[:limit], None
+
+
+def clear_assessments(lang=None):
+    """発音チェックの記録を削除（langを指定するとその言語のみ）。"""
+    with LOCK:
+        items = _load("assessments.json")
+        remain = [a for a in items if lang and a.get("lang") != lang]
+        _save("assessments.json", remain)
+        drive_push_async()
+    return {"deleted": len(items) - len(remain)}, None
 
 
 def article_fail(article_id, idx, ci, char="", syllable="", label="F"):
@@ -1190,6 +1202,8 @@ class Handler(BaseHTTPRequestHandler):
                                            body.get("breaks", []))
         elif self.path == "/api/articles/session":
             data, err = article_session(body.get("article_id"))
+        elif self.path == "/api/assessments/clear":
+            data, err = clear_assessments(body.get("lang"))
         elif self.path == "/api/articles/push":
             data, err = article_push_fails(body.get("article_id"))
         else:
