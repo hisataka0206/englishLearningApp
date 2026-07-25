@@ -75,7 +75,7 @@ def classify(expected_text, heard_text):
                 kind = "V"
             else:
                 kind = "F"
-            out[ei] = {"kind": kind, "label": KIND_LABEL[kind],
+            out[ei] = {"kind": kind, "label": KIND_LABEL[kind], "char": e_ch,
                        "expected": e_py, "heard": h_py, "heard_char": h_ch,
                        "retroflex": bool(kind == "R" and (
                            (ei_i in RETROFLEX and hi_i in FLAT)
@@ -96,6 +96,8 @@ def attach_to_words(words, expected_text, heard_text):
         if found and w.get("error") != "Omission":
             w["kind"] = found[0]["kind"]
             w["kind_label"] = found[0]["label"]
+            w["kind_char"] = found[0]["char"]          # 間違えた文字
             w["heard"] = found[0]["heard"]
+            w["heard_char"] = found[0]["heard_char"]   # そう聞こえた文字
             w["expected_py"] = found[0]["expected"]
     return words

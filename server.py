@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.35.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.36.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -454,6 +454,8 @@ def save_assessment(lang, text, data, source=""):
                        "wp": (w.get("worst") or {}).get("name", ""),
                        "ws": (w.get("worst") or {}).get("score"),
                        "k": w.get("kind", ""), "hd": w.get("heard", ""),
+                       "kc": w.get("kind_char", ""), "hc": w.get("heard_char", ""),
+                       "ep": w.get("expected_py", ""),
                        "ph": w.get("phoneme_scores", [])}
                       for w in data.get("words", [])],
         }
@@ -504,6 +506,10 @@ def weak_words(lang="zh", limit=60):
                     s["kinds"][w["k"]] = s["kinds"].get(w["k"], 0) + 1
                     if w.get("hd"):
                         s["heard"] = w["hd"]
+                    if w.get("kc"):        # 間違えた文字とその正しい読み
+                        s["kind_char"] = w["kc"]
+                        s["heard_char"] = w.get("hc", "")
+                        s["expected_py"] = w.get("ep", "")
             s["last"] = a["time"][:10]
             s["last_score"] = w.get("s")
     out = []

@@ -830,8 +830,12 @@ function weakTable(list) {
     const label = w.pairs ? rubyHTML(w.pairs, w.word) : esc(w.word);
     let kind = "-";
     if (w.kind) {
-      kind = `<b>${esc(w.kind.code)}</b> ${esc(w.kind.label)}`
-        + (w.heard ? `<div class="sub">→${esc(w.heard)}と発音</div>` : "");
+      const ch = w.kind_char
+        ? `<span style="font-size:16px">${esc(w.kind_char)}</span> ` : "";
+      const detail = w.expected_py && w.heard
+        ? `<div class="sub">${ch}${esc(w.expected_py)} → ${esc(w.heard)}${w.heard_char ? "（" + esc(w.heard_char) + "）" : ""}</div>`
+        : (w.heard ? `<div class="sub">→${esc(w.heard)}</div>` : "");
+      kind = `<b>${esc(w.kind.code)}</b> ${esc(w.kind.label)}${detail}`;
     } else if (w.weak) {
       kind = `<span class="sub">${esc(w.weak.name)} ${w.weak.score}点</span>`;
     }
@@ -1253,7 +1257,9 @@ function showWordDetail(i) {
     if (w.error === "Insertion") msg += "\n判定: 余分な音が入っています\n";
     if (w.kind_label) {
       msg += `\nミスの種類: ${w.kind}（${w.kind_label}）\n`;
-      if (w.expected_py && w.heard) msg += `正: ${w.expected_py} → 実際: ${w.heard}\n`;
+      if (w.kind_char) msg += `間違えた字: ${w.kind_char}\n`;
+      if (w.expected_py && w.heard)
+        msg += `正しい読み: ${w.expected_py} → 実際: ${w.heard}${w.heard_char ? "（" + w.heard_char + "に聞こえた）" : ""}\n`;
     }
     if (w.phoneme_scores && w.phoneme_scores.length) {
       msg += "\n音ごとの点数（正しい読み）:\n";
