@@ -64,7 +64,8 @@
 | 認証・DB | Supabase（Auth + Postgres + RLS） | 個人開発で認証を自作しない |
 | LLM | クラウドAPI（書き下ろし gpt-5.4-mini / 選別・語彙 Gemini 2.5 Flash-Lite） | ローカルLLMはMac常駐が前提で成立しない |
 | 課金 | Stripe Billing（実効手数料 4.3%） | — |
-| 音声 | **Web Speech API のまま** | **原価ゼロ。ここは変えない** |
+| 読み上げ | **Web Speech API のまま** | **原価ゼロ。ここは変えない** |
+| 発音評価 | Azure AI Speech | **従量課金。原価は未計上**（`pricing-plan.md` §2.3） |
 | 配信 | PWA（Web直販） | ストア手数料と審査を回避 |
 
 **発音（Web Speech API）とピンイン（クライアント計算）をサーバーに出さないことが、費用優位の源泉。**

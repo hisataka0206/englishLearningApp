@@ -1,7 +1,7 @@
 // 発音評価（録音 → Azure採点 → ミス種類の分類 → 記録）
 // 分類（R/V/T/N/F）はここで行う。pinyin-pro がクライアントにあるため。
 import { pinyin } from "https://esm.sh/pinyin-pro@3";
-import { sb, api } from "./data-api.js";
+import { sb, api, jstDate } from "./data-api.js";
 
 export const REC_LIMIT_SEC = 55;
 const KIND_LABEL = { F: "発音", R: "声母(子音)", V: "韻母(母音)", T: "声調", N: "数字2" };
@@ -202,9 +202,9 @@ async function saveAssessment(lang, text, d) {
 
 // ============================================================ 集計（記録タブ）
 export function aggregateWeak(rows, days = 30) {
-  const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
+  const since = jstDate(new Date(Date.now() - days * 864e5));
   const stat = {};
-  rows.filter((a) => (a.created_at || "").slice(0, 10) >= since).forEach((a) => {
+  rows.filter((a) => jstDate(a.created_at) >= since).forEach((a) => {
     (a.words || []).forEach((w) => {
       if (w.e === "Omission") return;
       const s = stat[w.w] ??= { word: w.w, tries: 0, miss: 0, sum: 0, last: "", kinds: {}, weak: {} };
@@ -217,7 +217,7 @@ export function aggregateWeak(rows, days = 30) {
           s.kind_char = w.kc || s.kind_char; s.heard = w.hd || s.heard; s.expected_py = w.ep || s.expected_py;
         }
       }
-      s.last = (a.created_at || "").slice(0, 10);
+      s.last = jstDate(a.created_at);
     });
   });
   return Object.values(stat).filter((s) => s.miss).map((s) => {

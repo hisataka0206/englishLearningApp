@@ -5,6 +5,15 @@ import { CONFIG } from "./config.js";
 
 export const sb = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
 
+// ★ Postgres の timestamptz は UTC で返るため、そのまま slice(0,10) すると
+//   JST 00:00〜08:59 の記録が「前日」として表示される。必ずこの関数を通すこと。
+//   （移行スクリプト側はナイーブ時刻を JST として解釈している。§8.2 と対）
+export function jstDate(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  return isNaN(d) ? "" : d.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+}
+
 let cachedUser = null;
 
 export async function currentUser() {
@@ -59,7 +68,8 @@ async function invoke(name, body) {
     try {
       const ctx = await error.context?.json?.();
       if (ctx?.error) msg = ctx.error;
-      if (error.context?.status === 401) { await signOut(); location.hash = "#/login"; }
+      // ★ ルーティングは History API（location.pathname）なので hash を変えても画面は切り替わらない
+      if (error.context?.status === 401) { await signOut(); location.href = "/login"; }
     } catch { /* noop */ }
     throw new Error(msg);
   }
@@ -99,10 +109,10 @@ export async function api(path, opts) {
           return {
             id: s.id, english: s.target, japanese: s.japanese,
             marked: s.marked || s.target, pinyin: s.pinyin || "",
-            created: (s.created_at || "").slice(0, 10),
+            created: jstDate(s.created_at),
             fail_count: s.fails?.[0]?.count ?? 0,
             practice_count: pr.length,
-            last_practiced: pr.length ? pr[pr.length - 1].slice(0, 10) : "",
+            last_practiced: pr.length ? jstDate(pr[pr.length - 1]) : "",
           };
         });
       }
@@ -139,7 +149,7 @@ export async function api(path, opts) {
         if (error) throw new Error(error.message);
         return (data ?? []).map((w) => ({
           id: w.id, word: w.word, meaning: w.meaning, example: w.example,
-          pinyin: w.pinyin || "", created: (w.created_at || "").slice(0, 10),
+          pinyin: w.pinyin || "", created: jstDate(w.created_at),
         }));
       }
       const { data, error } = await sb.from("words").insert({
@@ -175,7 +185,7 @@ export async function api(path, opts) {
       if (error) throw new Error(error.message);
       const { count } = await sb.from("practices")
         .select("id", { count: "exact", head: true }).eq("sentence_id", opts.id);
-      return { practice_count: count ?? 0, last_practiced: new Date().toISOString().slice(0, 10) };
+      return { practice_count: count ?? 0, last_practiced: jstDate(new Date()) };
     }
 
     // ---------------------------------------------------------------- 発音評価の記録
@@ -209,15 +219,12 @@ export async function api(path, opts) {
     // ---------------------------------------------------------------- プロフィール
     case "/api/profile": {
       if (!opts) {
+        // 自分の行だけ取得する（他人のプロフィールは RLS でも読めない）
         const { data, error } = await sb.from("profiles")
-          .select("id, display_name, default_lang, default_rate, default_split_mode, last_active_at");
+          .select("id, display_name, default_lang, default_rate, default_split_mode")
+          .eq("id", await uid()).maybeSingle();
         if (error) throw new Error(error.message);
-        const me = await uid();
-        return {
-          me: data.find((p) => p.id === me) ?? null,
-          family: data.filter((p) => p.id !== me)
-            .map((p) => ({ name: p.display_name, last: (p.last_active_at || "").slice(0, 10) })),
-        };
+        return { me: data ?? null };
       }
       const { error } = await sb.from("profiles").update(opts).eq("id", await uid());
       if (error) throw new Error(error.message);

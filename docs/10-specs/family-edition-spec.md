@@ -22,17 +22,19 @@ flowchart TB
 
     subgraph SB["Supabase（Free / Tokyo）"]
         AUTH["Auth<br/>signup無効・手動作成"]
-        EF["Edge Functions<br/>translate / keywords"]
-        DB["Postgres + RLS<br/>7テーブル"]
+        EF["Edge Functions<br/>translate / keywords / assess"]
+        DB["Postgres + RLS<br/>8テーブル"]
     end
 
     GEM["Gemini 2.5 Flash-Lite"]
+    AZ["Azure AI Speech<br/>（発音評価・従量課金）"]
     GHA["GitHub Actions<br/>週1回 keepalive"]
 
     UI -->|"①ログイン"| AUTH
     UI -->|"②CRUD（RLSで自分の行のみ）"| DB
     UI -->|"③翻訳・語彙抽出（JWT付き）"| EF
     EF -->|"APIキーはここにのみ存在"| GEM
+    EF -->|"録音WAV（★原価ゼロではない）"| AZ
     EF -->|"usage_logs 記録"| DB
     UI -.-> PY
     UI -.-> TTS
@@ -41,9 +43,13 @@ flowchart TB
     style TTS fill:#e8f5e9,stroke:#2e7d32
     style PY fill:#e8f5e9,stroke:#2e7d32
     style GEM fill:#fff8e1,stroke:#f9a825
+    style AZ fill:#fff8e1,stroke:#f9a825
 ```
 
-**緑＝原価ゼロ（クライアント完結）**。発音とピンインをサーバーに出さないことが、この構成の費用優位の源泉。
+**緑＝原価ゼロ（クライアント完結）**。読み上げ（TTS）とピンインをサーバーに出さないことが、この構成の費用優位の源泉。
+
+> **注意：発音「評価」は原価ゼロではない。** 読み上げ（Web Speech API・無料）と、録音を採点する発音評価（Azure・従量課金）は別物。
+> 事業文書の「音声はゼロ円」は前者のみを指す。→ `../00-business/pricing-plan.md` の原価表に Azure の行が要る。
 
 ### 0.2 データモデル（ER図）
 
@@ -54,6 +60,7 @@ erDiagram
     auth_users ||--o{ sentences : "所有"
     auth_users ||--o{ words : "所有"
     auth_users ||--o{ usage_logs : "記録"
+    auth_users ||--o{ assessments : "発音評価"
     sentences ||--o{ fails : "失敗履歴"
     sentences ||--o{ practices : "実施履歴"
     sentences ||--o{ words : "source_id"
@@ -64,7 +71,7 @@ erDiagram
         text default_lang
         numeric default_rate
         text default_split_mode "★新設"
-        timestamptz last_active_at "★家族間で共有"
+        timestamptz last_active_at
     }
     sentences {
         uuid id PK
@@ -81,9 +88,17 @@ erDiagram
     }
     usage_logs {
         bigserial id PK
-        text kind "translate|keywords"
+        text kind "translate|keywords|assess"
         int input_tokens
         int output_tokens
+    }
+    assessments {
+        uuid id PK
+        uuid user_id FK
+        text lang
+        text text
+        jsonb scores
+        jsonb words
     }
 ```
 
@@ -137,7 +152,7 @@ sequenceDiagram
 > **訂正（2026-07-26）**：当初この一覧に「弱点レポート」を含めていたが、これは誤り。
 > `current-app-spec.md` が**発音評価機能（Azure Speech）の実装前に書かれており**、
 > 棚卸しから漏れていたことに起因する。発音評価と「📊 記録」タブは本アプリの中核機能のため、
-> **家族版に含める**（§6.6 / §12.2・12.3 に追記）。
+> **家族版に含める**（§5.1 `assessments` / §6.5 / §12.2・12.3 / §13）。
 
 ### 「用意だけする」もの（後付けが困難なため）
 
@@ -157,7 +172,7 @@ sequenceDiagram
 |---|---|---|---|
 | 1 | 登録方式 | **サインアップ無効化** | 公開URLで第三者が登録するとLLM APIを消費される。実装も最小 |
 | 2 | ピンイン | **クライアント側で処理** | `/pinyin` Edge Function が丸ごと不要になり、応答も速い |
-| 3 | 家族間の可視性 | **最終利用日のみ共有** | 学習内容は見ない。撤退ライン④の判定に使える |
+| 3 | 家族間の可視性 | **一切共有しない** | 利用状況は `practices` からSQLで取れる（`../00-business/exit-plan.md` §6）。共有のためのRLS全開放は、事業版で削除必須の負債になる |
 | 4 | PWA | **manifestのみ**（SWなし） | 半日で終わり、現行の使い勝手を維持できる |
 | 5 | モデル選択UI | **廃止** | サーバー側で固定。ヘッダのステータス表示問題も同時に消える |
 
@@ -199,13 +214,14 @@ sequenceDiagram
 
 ### 4.1 URL
 
-現行のSPA構造（URL不変）を改め、**History API で3ルートを持つ**。PWAの起動先URLを固定するため。
+現行のSPA構造（URL不変）を改め、**History API で5ルートを持つ**。PWAの起動先URLを固定するため。
 
 | URL | 画面 | 認証 |
 |---|---|---|
 | `/login` | ログイン | 不要 |
 | `/` | メイン（作文） | 必要 |
 | `/history` | 履歴 | 必要 |
+| `/record` | 📊 記録（発音評価の履歴・苦手な音） | 必要 |
 | `/settings` | アカウント設定 | 必要 |
 
 プレイヤーは画面ではなく**全ルート共通の下部固定バー**（現行どおり）。
@@ -217,12 +233,14 @@ flowchart TD
     LOGIN["/login<br/>ログイン<br/><i>サインアップ導線なし</i>"]
     MAIN["/<br/>メイン（作文）"]
     HIST["/history<br/>履歴"]
+    REC["/record<br/>📊 記録<br/>発音評価の履歴・苦手な音"]
     SET["/settings<br/>アカウント設定"]
     PLAYER(["発音プレイヤー<br/>全画面共通の下部固定バー"])
 
     LOGIN -->|"ログイン成功"| MAIN
     MAIN <-->|"📜 履歴 / ← 戻る"| HIST
     HIST -->|"🔊 再学習（study）"| MAIN
+    MAIN <-->|"📊 記録"| REC
     MAIN -->|"⚙"| SET
     HIST -->|"⚙"| SET
     SET -->|"ログアウト"| LOGIN
@@ -240,8 +258,9 @@ flowchart TD
 | **ログイン** | メール/パスワード入力、エラー表示のみ。サインアップ導線なし |
 | **メイン** | 現行の `#viewMain` をそのまま移植（`current-app-spec.md` §1.2, §1.3） |
 | **履歴** | 現行の `#viewHistory` をそのまま移植（同 §1.4） |
-| **プレイヤー** | 現行の `#player` をそのまま移植（同 §1.5） |
-| **アカウント設定** | 表示名 / 既定言語 / 発音速度 / 区切りモード / **家族の最終利用日** / エクスポート / ログアウト |
+| **プレイヤー** | 現行の `#player` をそのまま移植（同 §1.5）。録音・発音評価を含む（同 §6.5） |
+| **📊 記録** | 発音評価の履歴と苦手な音の集計（直近30日）。現行の記録タブを移植（同 §6.5 #53） |
+| **アカウント設定** | 表示名 / 既定言語 / 発音速度 / 区切りモード / エクスポート / ログアウト |
 
 ### 4.4 ヘッダの変更
 
@@ -251,6 +270,7 @@ flowchart TD
 | Ollama✅ / 保存先 の2行 | **削除** → 代わりに**ログイン中の表示名**を表示 |
 | 履歴トグル | 維持 |
 | 再読込 | 維持 |
+| — | **📊（記録）を追加** |
 | — | **⚙（設定）を追加** |
 
 ---
@@ -267,7 +287,7 @@ create table profiles (
   default_lang text not null default 'en',          -- 'en' | 'zh'
   default_rate numeric not null default 0.9,        -- 0.4〜1.5
   default_split_mode text not null default 'fine',  -- 'normal'|'fine'|'sentence' ★新設
-  last_active_at timestamptz,                       -- ★家族間で共有する唯一の情報
+  last_active_at timestamptz,                       -- 本人のみ参照（家族間の共有は廃止）
   created_at timestamptz not null default now()
 );
 
@@ -333,7 +353,7 @@ create table subscriptions (
 create table usage_logs (
   id bigserial primary key,
   user_id uuid references auth.users on delete cascade,
-  kind text not null,            -- 'translate' | 'keywords'
+  kind text not null,            -- 'translate' | 'keywords' | 'assess'
   model text not null,
   input_tokens int not null default 0,
   output_tokens int not null default 0,
@@ -341,7 +361,25 @@ create table usage_logs (
 );
 create index on usage_logs (user_id, created_at desc);
 create index on usage_logs (kind, created_at desc);
+
+-- 発音評価の記録（§6.6。📊記録タブの元データ）
+create table assessments (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users on delete cascade,
+  lang text not null,
+  text text not null,            -- 読み上げた原文
+  heard text,                    -- 参照なし認識の結果（zhのみ）
+  source text,                   -- 由来（任意）
+  scores jsonb not null,         -- {pron, acc, flu, comp, prosody}
+  words jsonb not null,          -- 語ごとのスコア・音素・ミス種類
+  created_at timestamptz not null default now()
+);
+create index on assessments (user_id, lang, created_at desc);
 ```
+
+> **`usage_logs` は Gemini のトークン数を前提にした列構成**（`input_tokens` / `output_tokens`）。
+> **Azure の発音評価は音声の長さで課金されるため、この2列では原価換算できない**（`kind='assess'` の行は常に0になる）。
+> 原価の実測に使うなら `audio_seconds` 等の列が要る。→ `../20-plans/family-evaluation-plan.md` の集計SQLと合わせて要検討。
 
 ### 5.2 RLSポリシー
 
@@ -362,16 +400,23 @@ create policy "own rows" on words       for all using (auth.uid() = user_id) wit
 create policy "own rows" on fails       for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "own rows" on practices   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
--- profiles: 自分の行は全操作。他人の行は「最終利用日と表示名だけ」読める
+-- profiles: 自分の行だけ。他人のプロフィールは見せない
 create policy "own profile"    on profiles for all    using (auth.uid() = id) with check (auth.uid() = id);
-create policy "family read"    on profiles for select using (true);
---   ※ profiles には学習内容を入れないため、SELECT 全開放で問題ない。
---     他人に見えるのは display_name / last_active_at / 設定値のみ。
+--   ★ かつて "family read"（for select using (true)）で家族の最終利用日を共有していたが廃止した。
+--     ① 評価に必要な利用状況は practices からSQLで取れる
+--     ② 公開URL運用では anon キー保持者に全プロフィールが読める
+--     ③ 事業版で削除必須の負債（`saas-diff-spec.md` §2.4「最重要の見落とし」）を先に作ることになる
+--     復活させないこと。
+
+-- 発音評価の記録
+create policy "own rows" on assessments for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- subscriptions / usage_logs: 本人が読むだけ。書き込みはサービスロール限定
 create policy "own read" on subscriptions for select using (auth.uid() = user_id);
 create policy "own read" on usage_logs    for select using (auth.uid() = user_id);
 ```
+
+**ポリシーは8本**（`own rows`×5＝sentences/words/fails/practices/assessments、`own profile`、`own read`×2）。
 
 > **`usage_logs` への INSERT は Edge Function（サービスロール）からのみ**。クライアントに書かせない。
 
@@ -453,7 +498,18 @@ create policy "own read" on usage_logs    for select using (auth.uid() = user_id
 
 > **ピンインは返さない。** クライアント側で計算する。
 
-### 6.6 `POST /functions/v1/assess`（発音評価。★棚卸し漏れの補遺）
+### 6.6 使用モデル・外部サービス
+
+| 用途 | モデル | 備考 |
+|---|---|---|
+| 翻訳 | `gemini-2.5-flash-lite` | 0.015円/文の試算根拠 |
+| キーワード抽出 | `gemini-2.5-flash-lite` | 同上 |
+
+**家族版の2ヶ月で実測し、`usage_logs` から原価を確定させる**（`../30-research/saas-migration-study.md` §8.0.2）。
+
+---
+
+### 6.5 `POST /functions/v1/assess`（発音評価）
 
 **リクエスト**：`multipart/form-data`
 | フィールド | 内容 |
@@ -485,17 +541,6 @@ create policy "own read" on usage_logs    for select using (auth.uid() = user_id
 > なめらかさ10点・読めた割合50%といった誤判定になる（実測で確認済み）。
 
 **環境変数**：`AZURE_SPEECH_KEY` / `AZURE_SPEECH_REGION`
-
-### 6.5 使用モデル
-
-| 用途 | モデル | 備考 |
-|---|---|---|
-| 翻訳 | `gemini-2.5-flash-lite` | 0.015円/文の試算根拠 |
-| キーワード抽出 | `gemini-2.5-flash-lite` | 同上 |
-
-**家族版の2ヶ月で実測し、`usage_logs` から原価を確定させる**（`../30-research/saas-migration-study.md` §8.0.2）。
-
----
 
 ## 7. クライアント実装方針
 
@@ -663,7 +708,7 @@ create policy "own read" on usage_logs    for select using (auth.uid() = user_id
 
 - [ ] Supabase プロジェクト作成（Tokyo / Free）
 - [ ] Authentication → Email signup を **OFF**
-- [ ] マイグレーションファイルで §5.1 のスキーマを投入
+- [ ] マイグレーションファイルで §5.1 のスキーマを投入（**`assessments` を含む2本とも**）
 - [ ] §5.2 の RLS ポリシーを全テーブルに適用
 - [ ] `auth.users` 作成時に `profiles` と `subscriptions` を自動作成するトリガー
 - [ ] 家族3人のアカウントをダッシュボードで作成
@@ -672,6 +717,7 @@ create policy "own read" on usage_logs    for select using (auth.uid() = user_id
 
 - [ ] `translate`（§6.3）
 - [ ] `keywords`（§6.4。**word/meaning入替補正を含む**）
+- [ ] `assess`（§6.5。Azure Speech のプロキシ。**キーはサーバー側のみ**）
 - [ ] クォータ判定関数（`family` は通過）
 - [ ] `usage_logs` への記録
 - [ ] `last_active_at` の更新
@@ -679,7 +725,7 @@ create policy "own read" on usage_logs    for select using (auth.uid() = user_id
 ### 12.3 クライアント
 
 - [ ] ログイン画面
-- [ ] ルーティング（`/` `/history` `/settings` `/login`）
+- [ ] ルーティング（`/` `/history` `/record` `/settings` `/login`）
 - [ ] `api()` の中身を Supabase SDK に差し替え
 - [ ] ヘッダの改修（バージョン・ステータス削除、表示名・⚙追加）
 - [ ] モデル選択プルダウンの削除
@@ -687,8 +733,14 @@ create policy "own read" on usage_logs    for select using (auth.uid() = user_id
 - [ ] 設定値の同期（§7.5）
 - [ ] アカウント設定画面
 - [ ] エクスポート機能（現行のMarkdown生成を移植）
+- [ ] 録音 → 16kHz mono WAV 変換 → 発音評価（§6.5）
+- [ ] R/V/T/N/F 分類の移植（`current-app-spec.md` §6.5 #50。**挿入・欠落は分類しない**）
+- [ ] 📊 記録タブ（苦手な音・直近30日・拼音ルビ）
+- [ ] 中国語 `fine` の**词（単語）分割**（`pinyin-pro` の `segment()`。1文字分割にしない。同 §3.3）
+- [ ] 日付表示の**JST変換**（timestamptz は UTC で返るため）
 - [ ] PWA manifest とアイコン
-- [ ] **`current-app-spec.md` の全32項目 + §7の12項目を「移植/廃止/変更」で埋める**
+- [ ] `vercel.json`（SPA rewrites）
+- [ ] **`current-app-spec.md` の全項目を「移植/廃止/変更」で埋める**
 
 ### 12.4 移行と確認
 
@@ -703,12 +755,14 @@ create policy "own read" on usage_logs    for select using (auth.uid() = user_id
 ## 13. 受け入れ基準
 
 1. `current-app-spec.md` の全項目が「移植/廃止/変更」で埋まっている
-2. 家族3人がそれぞれログインし、**互いのデータが見えない**（RLSの動作確認）
-3. アカウント設定で**家族の最終利用日だけ**が見える
-4. 既存データが全件移行され、§8.4 の検証項目を満たす
-5. iPhone のホーム画面から起動し、発音・保存・履歴・再学習が動く
-6. `usage_logs` にトークン数が記録されている
-7. Edge Function の環境変数にAPIキーがあり、**クライアントのバンドルに含まれていない**
+2. 家族3人がそれぞれログインし、**互いのデータもプロフィールも見えない**（RLSの動作確認）
+3. 既存データが全件移行され、§8.4 の検証項目を満たす
+4. iPhone のホーム画面から起動し、発音・保存・履歴・再学習・**発音チェック**が動く
+5. **📊 記録**で苦手な音（直近30日）が表示される
+6. 中国語の「細かめ」が**词単位**で区切られる（1文字ずつではない）
+7. **JST 0〜9時**に保存した文の日付がその日になっている
+8. `usage_logs` にトークン数が記録されている
+9. Edge Function の環境変数にAPIキーがあり、**クライアントのバンドルに含まれていない**
 
 ---
 
@@ -740,7 +794,7 @@ flowchart LR
 | 要素 | 理由 |
 |---|---|
 | `profiles` の `"family read"` RLSポリシー | **他人のプロフィールが見えてしまう。事業版では必ず削除**（`saas-diff-spec.md` §2.4） |
-| アカウント設定の「家族の最終利用日」欄 | 同上 |
+
 | GitHub Actions の keepalive | Pro では一時停止しないため不要 |
 
 ---

@@ -27,6 +27,7 @@
 | 学習日数・頻度 | `practices` / `assessments` の `occurred_at` | 週あたり何日使ったか |
 | 作文数 | `sentences` | 月150文の無料枠は妥当か |
 | **消費トークン** | `usage_logs.input_tokens / output_tokens` | **原価の裏取り（最重要）** |
+| **発音評価の利用量** | `usage_logs` の `kind='assess'` | ★**Azureは音声の秒数で課金される**。現在の列（トークン数）では測れないので、`audio_seconds` 列を**評価開始前に**追加すること |
 | 発音スコアの推移 | `assessments.scores.pron` | 上達しているか＝商品価値の証拠 |
 | 苦手語の推移 | `assessments.words` | 弱点が減っているか |
 
@@ -35,6 +36,7 @@
 | 指標 | 方法 | 頻度 |
 |---|---|---|
 | 娘の感想 | 対話。「使いにくいところ」「あったらいいもの」 | 2週に1回 |
+| **使った機能／使わなかった機能** | 観察とヒアリング。区切り編集・速度プリセット・履歴検索・記録タブなど | 2週に1回 |
 | 運用時間 | 障害対応・調整にかけた時間をメモ | 都度 |
 | 障害・不具合 | 内容と対応をメモ | 都度 |
 
@@ -54,8 +56,15 @@ group by kind;
 -- 利用頻度（ユーザー別・日別）
 select user_id, date(occurred_at) as d, count(*) as n
 from practices
-where occurred_at >= now() - interval '30 days'
+where occurred_at >= now() - interval '60 days'
 group by 1, 2 order by 2 desc;
+
+-- 週あたりの学習日数（条件A「週2日以上が2ヶ月継続」の判定用）
+select user_id, date_trunc('week', occurred_at) as wk,
+       count(distinct date(occurred_at)) as days
+from practices
+where occurred_at >= now() - interval '60 days'
+group by 1, 2 order by 2;
 
 -- 発音スコアの推移
 select date(created_at) as d, lang,
@@ -88,6 +97,8 @@ group by 1, 2 order by 1;
 2. arXiv のカテゴリ特定と実供給量の計測
 3. 各サイトの robots.txt・利用規約の確認
 4. **「教材にする価値がある記事」の判断基準の言語化** ← GO条件E。最重要
+5. **記事生成の手動試作**（GO条件F）。**アプリには実装しない**手元スクリプトに限る。
+   これは §7 の「新機能の追加」には当たらない（アプリの挙動を変えないため）
 
 > 4 は机上で考えるより、**実際に自分が記事を選ぶときに「なぜ選んだか」をその場でメモする**のが早い。
 > 20〜30件貯まれば、共通する判断軸が見えてくる。
@@ -105,7 +116,8 @@ group by 1, 2 order by 1;
 4. 運用負荷     … 月あたりの時間、障害件数
 5. 定性         … 娘の感想（そのまま引用する）
 6. 目利きの言語化 … 判断軸が書けたか／書けなかったか
-7. 結論         … GO / NO-GO / 延長
+7. 使われた機能 … 2ヶ月で一度も使われなかった機能（事業版から落とす候補）
+8. 結論         … GO / NO-GO / 延長
 ```
 
 これをもって `../00-business/go-nogo-plan.md` §2 の表を埋め、判断する。

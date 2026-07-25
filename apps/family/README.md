@@ -5,15 +5,20 @@
 ```
 family/
 ├── supabase/
-│   ├── migrations/20260726000001_init.sql   … 7テーブル・RLS・トリガー
+│   ├── migrations/
+│   │   ├── 20260726000001_init.sql          … 7テーブル・RLS・トリガー
+│   │   └── 20260726000002_assessments.sql   … 発音評価の記録（★流し忘れ注意）
 │   └── functions/
 │       ├── _shared/common.ts                … JWT検証・クォータ・Gemini・usage_logs
 │       ├── translate/index.ts               … 翻訳（小学生ペルソナのプロンプト移植）
-│       └── keywords/index.ts                … 語彙抽出（word/meaning入替補正つき）
+│       ├── keywords/index.ts                … 語彙抽出（word/meaning入替補正つき）
+│       └── assess/index.ts                  … 発音評価（Azure Speech のプロキシ）
 ├── web/                                     … クライアント（素のJS・Vercelに配置）
-│   ├── index.html / app.js / data-api.js / config.js / manifest.json
+│   ├── index.html / app.js / data-api.js / assess.js / config.js / manifest.json
 ├── scripts/migrate_to_supabase.py           … 既存JSONの移行（冪等）
-└── .github/workflows/keepalive.yml          … Freeプランの一時停止対策
+
+（keepalive のワークフローは **リポジトリルートの `.github/workflows/keepalive.yml`**。
+　GitHub Actions はルートの `.github/` しか読まないため、ここには置けない）
 ```
 
 ---
@@ -24,7 +29,10 @@ family/
 
 1. [supabase.com](https://supabase.com) で新規プロジェクト（**リージョン Tokyo / Free**）
 2. **Authentication → Providers → Email → "Enable email signup" を OFF**（第三者の登録を防ぐ）
-3. SQL Editor に `supabase/migrations/20260726000001_init.sql` を貼って実行
+3. SQL Editor でマイグレーションを**2本とも**実行する（順番どおり）
+   1. `supabase/migrations/20260726000001_init.sql`
+   2. `supabase/migrations/20260726000002_assessments.sql`
+   ★ 2本目を忘れると `assessments` が無く、**発音評価と📊記録タブが動かない**
 4. Authentication → Users → **Add user** で家族分を手動作成（`email_confirm` をON）
    - 娘のアカウントは親のエイリアス（`you+daughter@example.com`）でよい
 
@@ -67,13 +75,15 @@ export const CONFIG = {
 
 ```bash
 cd scripts
-python3 migrate_to_supabase.py --data ../../data --dry-run    # まず確認
+python3 migrate_to_supabase.py --data ../../local/data --dry-run    # まず確認
 
 export SUPABASE_URL=https://xxxx.supabase.co
 export SUPABASE_SERVICE_ROLE_KEY=eyJ...      # service_role キー（絶対に公開しない）
 export USER_ID=<自分のユーザーUUID>
-python3 migrate_to_supabase.py --data ../../data
+python3 migrate_to_supabase.py --data ../../local/data
 ```
+
+> データは `apps/local/data/` にある（`scripts/` から見て `../../local/data`）。
 
 ### 5. デプロイ（Vercel Hobby）
 
@@ -110,9 +120,11 @@ GitHub リポジトリの Secrets に `SUPABASE_URL` と `SUPABASE_ANON_KEY` を
 
 ## 受け入れ確認（spec §13）
 
-- [ ] 家族3人がログインでき、互いのデータが見えない（RLS）
-- [ ] 設定画面に家族の最終利用日だけが見える
+- [ ] 家族3人がログインでき、**互いのデータもプロフィールも見えない**（RLS）
 - [ ] 既存データが全件移行されている
-- [ ] iPhoneのホーム画面から起動し、発音・保存・履歴・再学習が動く
+- [ ] iPhoneのホーム画面から起動し、発音・保存・履歴・再学習・**発音チェック**が動く
+- [ ] **📊記録タブ**で苦手な音（直近30日）が出る
+- [ ] 中国語の区切り「細かめ」が**词（単語）単位**になっている（1文字ずつではない）
+- [ ] 深夜（JST 0〜9時）に保存した文の日付が**その日**になっている
 - [ ] `usage_logs` にトークン数が記録されている
 - [ ] クライアントのバンドルにAPIキーが含まれていない

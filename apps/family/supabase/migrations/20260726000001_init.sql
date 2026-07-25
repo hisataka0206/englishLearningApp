@@ -106,14 +106,17 @@ drop policy if exists "own rows" on practices;
 create policy "own rows" on practices for all
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
--- profiles: 自分の行は全操作。他人は「表示名と最終利用日」だけ読める
--- （学習内容は profiles に入れないため SELECT 全開放でよい。事業版では必ず削除する）
+-- profiles: 自分の行だけ。他人のプロフィールは一切見せない
 drop policy if exists "own profile" on profiles;
 create policy "own profile" on profiles for all
   using (auth.uid() = id) with check (auth.uid() = id);
 
+-- ★ かつて "family read"（for select using (true)）で家族の最終利用日を共有していたが廃止した。
+--   理由: ①評価に必要な利用状況は practices テーブルからSQLで取れる（exit-plan §6）
+--         ②公開URL運用では anon キー保持者に全プロフィールが読めてしまう
+--         ③事業版で削除必須の負債を、必要のない機能のために先に作ることになる
+--   復活させないこと。
 drop policy if exists "family read" on profiles;
-create policy "family read" on profiles for select using (true);
 
 -- subscriptions / usage_logs: 本人が読むだけ。書き込みはサービスロール限定
 drop policy if exists "own read" on subscriptions;

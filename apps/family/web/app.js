@@ -1,6 +1,6 @@
 // 家族版 クライアント本体（現行 index.html のコア機能を移植）
 import { api, sb, signIn, signOut, currentUser } from "./data-api.js";
-import { pinyin } from "https://esm.sh/pinyin-pro@3";
+import { pinyin, segment } from "https://esm.sh/pinyin-pro@3";
 import * as assess from "./assess.js";
 
 // ============================================================ 言語ラベル
@@ -53,8 +53,16 @@ function pinyinPairs(text) {
   });
 }
 
+// ★ 词（単語）レベルの分かち書き。現行アプリのサーバー側 jieba に相当する
+//   （current-app-spec.md §3.3・§7 #43.5）。
+//   pinyin({type:"all"}) は「1文字ずつ」返すため、これを使うと fine が
+//   1漢字＝1チップに退化する。必ず segment() を使うこと。
 function zhWords(text) {
-  try { return pinyin(text, { type: "all" }).map((x) => x.origin); } catch { return []; }
+  try {
+    return segment(text).filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 // ============================================================ 発音（Web Speech API）
@@ -519,9 +527,6 @@ async function loadProfile() {
   $("setLang").value = lang;
   $("setRate").value = profile.default_rate ?? 0.9;
   $("setSplit").value = profile.default_split_mode || "fine";
-  $("family").innerHTML = p.family.length
-    ? p.family.map((f) => `<div class="sub">${esc(f.name || "(名前未設定)")} — 最終利用 ${f.last || "なし"}</div>`).join("")
-    : "<div class='sub'>他のメンバーはいません</div>";
 }
 
 // ============================================================ エクスポート
