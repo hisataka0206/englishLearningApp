@@ -178,6 +178,34 @@ export async function api(path, opts) {
       return { practice_count: count ?? 0, last_practiced: new Date().toISOString().slice(0, 10) };
     }
 
+    // ---------------------------------------------------------------- 発音評価の記録
+    case "/api/assessments": {
+      if (!opts) {                       // GET: 一覧（集計はクライアント側）
+        const { data, error } = await sb
+          .from("assessments")
+          .select("id, lang, text, heard, scores, words, created_at")
+          .eq("lang", lang)
+          .order("created_at", { ascending: false })
+          .limit(300);
+        if (error) throw new Error(error.message);
+        return data ?? [];
+      }
+      const { error } = await sb.from("assessments").insert({
+        user_id: await uid(), lang: opts.lang ?? lang, text: opts.text,
+        heard: opts.heard ?? null, source: opts.source ?? "",
+        scores: opts.scores ?? {}, words: opts.words ?? [],
+      });
+      if (error) throw new Error(error.message);
+      return { ok: true };
+    }
+
+    case "/api/assessments/clear": {
+      const { error } = await sb.from("assessments").delete()
+        .eq("lang", opts.lang ?? lang).eq("user_id", await uid());
+      if (error) throw new Error(error.message);
+      return { ok: true };
+    }
+
     // ---------------------------------------------------------------- プロフィール
     case "/api/profile": {
       if (!opts) {

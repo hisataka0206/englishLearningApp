@@ -1,6 +1,7 @@
 // 家族版 クライアント本体（現行 index.html のコア機能を移植）
 import { api, sb, signIn, signOut, currentUser } from "./data-api.js";
 import { pinyin } from "https://esm.sh/pinyin-pro@3";
+import * as assess from "./assess.js";
 
 // ============================================================ 言語ラベル
 const LABELS = {
@@ -129,6 +130,7 @@ function splitPhrases(text, mode) {
 const player = { text: "", phrases: [], idx: 0, playing: false, gen: 0 };
 
 function playerSetText(text) {
+  if (player.text && player.text !== text) assess.clearRecording(assessUI);   // 別の文なら録音を破棄
   player.text = text;
   player.phrases = splitPhrases(text);
   player.idx = 0;
@@ -541,8 +543,140 @@ function exportMarkdown() {
   URL.revokeObjectURL(a.href);
 }
 
+// ============================================================ 発音評価
+const scoreColor = (s) => (s >= 80 ? "var(--ok)" : s >= 60 ? "#e0a100" : "var(--ng)");
+
+const assessUI = {
+  recording(on) {
+    const b = $("btnRec");
+    b.textContent = on ? "⏹ 停止 0s" : "🎙 録音";
+    b.classList.toggle("recording", on);
+    if (on) { $("assessBox").style.display = "none"; }
+  },
+  tick(sec) { $("btnRec").textContent = `⏹ 停止 ${sec}s`; },
+  playbackReady(on) {
+    $("btnPlayRec").style.display = on ? "" : "none";
+    $("btnPlayModel").style.display = on ? "" : "none";
+  },
+  pending() { const b = $("assessBox"); b.style.display = ""; b.innerHTML = "<span class='sub'>発音を判定中…</span>"; },
+  showError(m) { const b = $("assessBox"); b.style.display = ""; b.innerHTML = `<span class="msg ng">${esc(m)}</span>`; },
+  clearResult() { const b = $("assessBox"); b.style.display = "none"; b.innerHTML = ""; },
+  render(d) { renderAssess(d); },
+};
+
+function renderAssess(d) {
+  const box = $("assessBox"); const sc = d.scores;
+  const omitted = d.words.filter((w) => w.error === "Omission").length;
+  let h = `<div style="font-size:13px;margin-bottom:4px">総合 <b style="color:${scoreColor(sc.pron)}">${sc.pron}</b>
+    <span class="sub">｜発音 ${sc.accuracy}／なめらかさ ${sc.fluency}／読めた割合 ${sc.completeness}%${sc.prosody ? "／抑揚 " + sc.prosody : ""}</span></div>`;
+  if (sc.completeness < 50 || sc.fluency === 0)
+    h += `<div class="msg ng" style="margin:0 0 4px">⚠️ ${omitted}語が聞き取れませんでした</div>`;
+  h += `<div style="display:flex;flex-wrap:wrap;gap:4px">`;
+  d.words.forEach((w, i) => {
+    const miss = w.error === "Omission";
+    const bad = (w.error !== "None" && !miss) || (w.score < 60 && !miss);
+    h += `<span class="aw" data-i="${i}" style="padding:3px 7px;border-radius:8px;font-size:16px;cursor:pointer;
+      background:${miss ? "#eef1f8" : bad ? "#fdecec" : "#eaf7ef"};color:${miss ? "var(--muted)" : scoreColor(w.score)}">${esc(w.word)}</span>`;
+  });
+  h += "</div>";
+  const wrong = d.words.filter((w) => w.error !== "Omission" && (w.error !== "None" || w.score < 60));
+  h += wrong.length
+    ? `<div class="sub" style="margin-top:4px">直したい: ${wrong.map((w) => esc(w.word) + (w.worst ? `（${esc(w.worst.name)}）` : "")).join("、")}</div>`
+    : (sc.completeness >= 50 ? `<div class="sub" style="margin-top:4px">よくできました！</div>` : "");
+  box.style.display = ""; box.innerHTML = h;
+  box.querySelectorAll(".aw").forEach((el) => {
+    el.oncontextmenu = (ev) => { ev.preventDefault(); showWordDetail(+el.dataset.i); return false; };
+    let t = null;
+    el.addEventListener("touchstart", () => { t = setTimeout(() => { t = null; showWordDetail(+el.dataset.i); }, 450); }, { passive: true });
+    const cancel = () => { if (t) { clearTimeout(t); t = null; } };
+    el.addEventListener("touchend", cancel); el.addEventListener("touchmove", cancel);
+  });
+}
+
+function showWordDetail(i) {
+  const w = assess.lastAssess?.words[i]; if (!w) return;
+  let m = `「${w.word}」\n\n`;
+  if (w.error === "Omission") m += "⬜ グレー＝この単語が聞き取れませんでした。";
+  else {
+    m += `発音スコア: ${w.score} 点\n`;
+    m += w.score >= 80 ? "🟩 緑＝よくできています（80点以上）\n"
+      : w.score >= 60 ? "🟨 黄＝おしい（60〜79点）\n" : "🟥 赤＝お手本と違って聞こえます（60点未満）\n";
+    if (w.error === "Mispronunciation") m += "\n判定: 発音まちがい\n";
+    if (w.kind_label) {
+      m += `\nミスの種類: ${w.kind}（${w.kind_label}）\n`;
+      if (w.kind_char) m += `間違えた字: ${w.kind_char}\n`;
+      if (w.expected_py && w.heard) m += `正しい読み: ${w.expected_py} → 実際: ${w.heard}${w.heard_char ? `（${w.heard_char}に聞こえた）` : ""}\n`;
+    }
+    if (w.phoneme_scores?.length) {
+      m += "\n音ごとの点数（正しい読み）:\n";
+      w.phoneme_scores.forEach((p) => { m += `  ${p[0]} … ${p[1]}点\n`; });
+    }
+  }
+  alert(m);
+}
+
+// ============================================================ 記録タブ
+let recLang = "zh", recTab = "weak", recRows = [];
+
+async function loadRecord() {
+  $("rlang_en").classList.toggle("active", recLang === "en");
+  $("rlang_zh").classList.toggle("active", recLang === "zh");
+  $("rtab_weak").classList.toggle("active", recTab === "weak");
+  $("rtab_hist").classList.toggle("active", recTab === "hist");
+  const box = $("recordBody");
+  try {
+    recRows = await api(`/api/assessments?lang=${recLang}`);
+    if (!recRows.length) { box.innerHTML = "まだ記録がありません（発音チェックをすると貯まります）"; return; }
+    box.innerHTML = recTab === "weak" ? weakTable(assess.aggregateWeak(recRows)) : histTable(recRows);
+    box.querySelectorAll("[data-say]").forEach((b) => b.onclick = () => speak(b.dataset.say));
+  } catch (e) { box.textContent = e.message; }
+}
+
+function rubyHTML(word) {
+  return Array.from(word).map((ch) => {
+    const py = /[一-鿿]/.test(ch) ? pinyinOf(ch) : "";
+    return py ? `<ruby>${esc(ch)}<rt>${esc(py)}</rt></ruby>` : esc(ch);
+  }).join("");
+}
+
+function weakTable(list) {
+  if (!list.length) return "直近30日でミスした語はありません";
+  let h = `<table class="htable"><tr><th>語</th><th>ミスの種類</th><th>ミス(30日)</th><th>最終</th></tr>`;
+  list.forEach((w) => {
+    const label = recLang === "zh" ? rubyHTML(w.word) : esc(w.word);
+    let kind = "-";
+    if (w.kind) {
+      const detail = w.expected_py && w.heard
+        ? `<div class="sub">${w.kind_char ? esc(w.kind_char) + " " : ""}${esc(w.expected_py)} → ${esc(w.heard)}</div>` : "";
+      kind = `<b>${esc(w.kind.code)}</b> ${esc(w.kind.label)}${detail}`;
+    } else if (w.weakSound) kind = `<span class="sub">${esc(w.weakSound.name)} ${w.weakSound.score}点</span>`;
+    h += `<tr><td style="font-size:20px;line-height:1.6">${label}
+        <button class="icon" data-say="${esc(w.word)}">🔊</button></td>
+      <td>${kind}</td>
+      <td style="white-space:nowrap"><b style="color:${w.rate >= 50 ? "var(--ng)" : "inherit"}">${w.miss}</b><span class="sub">/${w.tries}</span></td>
+      <td class="sub" style="white-space:nowrap">${(w.last || "").slice(5)}</td></tr>`;
+  });
+  return h + "</table>";
+}
+
+function histTable(rows) {
+  let h = `<table class="htable"><tr><th>日時</th><th>文</th><th>総合</th></tr>`;
+  rows.slice(0, 50).forEach((a) => {
+    const ng = (a.words || []).filter((w) => (w.e && w.e !== "None" && w.e !== "Omission") || (w.s ?? 100) < 60).map((w) => w.w);
+    h += `<tr><td class="sub" style="white-space:nowrap">${(a.created_at || "").slice(5, 16).replace("T", " ")}</td>
+      <td>${esc((a.text || "").slice(0, 40))}${ng.length ? `<div class="sub" style="color:var(--ng)">${ng.map(esc).join("、")}</div>` : ""}</td>
+      <td style="color:${scoreColor(a.scores?.pron ?? 0)};font-weight:700">${a.scores?.pron ?? "-"}</td></tr>`;
+  });
+  return h + "</table>";
+}
+
+async function clearRecords() {
+  if (!confirm(`${recLang === "zh" ? "中国語" : "英語"}の発音記録をすべて削除しますか？`)) return;
+  try { await api("/api/assessments/clear", { lang: recLang }); loadRecord(); } catch (e) { alert(e.message); }
+}
+
 // ============================================================ ルーティング
-const ROUTES = ["/", "/history", "/settings", "/login"];
+const ROUTES = ["/", "/history", "/record", "/settings", "/login"];
 
 function go(path, push = true) {
   if (push) history.pushState({}, "", path);
@@ -555,10 +689,12 @@ function render(path) {
   if (authed && path === "/login") return go("/", true);
   $("viewLogin").style.display = path === "/login" ? "" : "none";
   $("viewMain").style.display = (path === "/" || path === "/history") ? "" : "none";
+  $("viewRecord").style.display = path === "/record" ? "" : "none";
   $("viewSettings").style.display = path === "/settings" ? "" : "none";
   $("appHeader").style.display = path === "/login" ? "none" : "";
   if (path === "/history") setSub("history");
   else if (path === "/") setSub("compose");
+  else if (path === "/record") { recLang = lang; loadRecord(); }
   window.scrollTo(0, 0);
 }
 
@@ -584,7 +720,18 @@ async function boot() {
   $("splitMode").onchange = splitModeChanged;
   document.querySelectorAll("[data-rate]").forEach((b) => b.onclick = () => setRate(+b.dataset.rate));
   $("navHistory").onclick = () => go("/history");
+  $("navRecord").onclick = () => go("/record");
   $("navSettings").onclick = () => go("/settings");
+  // 発音チェック
+  $("btnRec").onclick = () => assess.toggleRecord(
+    () => (player.text || "").replace(/[/|｜／]/g, "").trim(), lang, assessUI);
+  $("btnPlayRec").onclick = assess.playMyRec;
+  $("btnPlayModel").onclick = () => { const t = assess.modelText(); if (t) speak(t); };
+  $("rlang_en").onclick = () => { recLang = "en"; loadRecord(); };
+  $("rlang_zh").onclick = () => { recLang = "zh"; loadRecord(); };
+  $("rtab_weak").onclick = () => { recTab = "weak"; loadRecord(); };
+  $("rtab_hist").onclick = () => { recTab = "hist"; loadRecord(); };
+  $("btnClearRec").onclick = clearRecords;
   $("navReload").onclick = () => location.reload();
   $("btnBackMain").onclick = () => go("/");
   $("btnExport").onclick = exportMarkdown;

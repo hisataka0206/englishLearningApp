@@ -132,7 +132,12 @@ sequenceDiagram
 
 ### 含まないもの
 
-記事フィード / Stripe課金 / 課金画面 / 利用規約・特商法表記・プライバシーポリシー / ソーシャルログイン / 弱点レポート
+記事フィード / Stripe課金 / 課金画面 / 利用規約・特商法表記・プライバシーポリシー / ソーシャルログイン
+
+> **訂正（2026-07-26）**：当初この一覧に「弱点レポート」を含めていたが、これは誤り。
+> `current-app-inventory.md` が**発音評価機能（Azure Speech）の実装前に書かれており**、
+> 棚卸しから漏れていたことに起因する。発音評価と「📊 記録」タブは本アプリの中核機能のため、
+> **家族版に含める**（§6.6 / §12.2・12.3 に追記）。
 
 ### 「用意だけする」もの（後付けが困難なため）
 
@@ -447,6 +452,39 @@ create policy "own read" on usage_logs    for select using (auth.uid() = user_id
 8. `usage_logs` に `kind='keywords'` で記録
 
 > **ピンインは返さない。** クライアント側で計算する。
+
+### 6.6 `POST /functions/v1/assess`（発音評価。★棚卸し漏れの補遺）
+
+**リクエスト**：`multipart/form-data`
+| フィールド | 内容 |
+|---|---|
+| `audio` | **16kHz mono の WAV**（クライアントで変換・音量正規化してから送る） |
+| `text` | 読み上げた文（正解） |
+| `lang` | `en` / `zh` |
+
+**レスポンス**
+```json
+{ "ok": true, "data": {
+  "scores": { "pron": 88, "accuracy": 88, "fluency": 100, "completeness": 90, "prosody": 63 },
+  "words": [ { "word": "想", "score": 41, "error": "Mispronunciation",
+               "phoneme_scores": [["xiang 3", 41]], "worst": {"name":"xiang 3","score":41} } ],
+  "heard": "我乡去公园。"
+} }
+```
+
+**処理**
+1. JWT検証 → クォータ判定（`family` は通過）
+2. Azure Speech の発音評価API（`Pronunciation-Assessment` ヘッダ／Granularity=Phoneme）を呼ぶ
+3. **中国語のみ**、参照テキストなしの認識をもう1回呼び、`heard`（実際に聞こえた文）を得る
+4. `usage_logs` に `kind='assess'` で記録
+
+> **R/V/T/N の分類はクライアントで行う**（`pinyin-pro` を持っているため）。
+> サーバーは「正解」と「聞こえた文」を返すだけに留め、Edge Function を薄く保つ。
+
+> **WAVで送ることが必須**。webm/opus のまま送ると Azure 側で時間軸が壊れ（5秒→1.16秒と解釈）、
+> なめらかさ10点・読めた割合50%といった誤判定になる（実測で確認済み）。
+
+**環境変数**：`AZURE_SPEECH_KEY` / `AZURE_SPEECH_REGION`
 
 ### 6.5 使用モデル
 

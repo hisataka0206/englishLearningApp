@@ -57,6 +57,8 @@
   .chip.active { background:var(--accent); color:#fff; }
   .chip.done { background:#d7e3ff; }
   .chip .cpy { font-size:10px; opacity:.7; }
+  #btnRec.recording { background:var(--ng); color:#fff; }
+  ruby rt { font-size:.55em; color:var(--accent); }
   .cgrid { display:flex; flex-wrap:wrap; align-items:flex-end; margin:4px 0 6px; }
   .cchar { display:inline-flex; flex-direction:column; align-items:center; padding:1px 2px; border-radius:6px;
     -webkit-user-select:none; user-select:none; }
@@ -78,6 +80,7 @@
   <div style="display:flex;align-items:center;gap:8px">
     <span id="who" style="font-size:12px;font-weight:400;opacity:.9"></span>
     <button class="navb" id="navHistory">📜</button>
+    <button class="navb" id="navRecord">📊</button>
     <button class="navb" id="navSettings">⚙</button>
     <button class="navb" id="navReload">⟳</button>
   </div>
@@ -148,6 +151,20 @@
   </div>
 </div>
 
+<!-- ============================================ 記録（発音チェック） -->
+<div id="viewRecord" style="display:none">
+  <div class="langsel">
+    <button id="rlang_en">🇺🇸 英語</button>
+    <button id="rlang_zh">🇨🇳 中国語</button>
+  </div>
+  <div class="row" style="margin-bottom:10px">
+    <button class="tab small active" id="rtab_weak">苦手</button>
+    <button class="tab small" id="rtab_hist">履歴</button>
+    <button class="small ghost" id="btnClearRec" style="margin-left:auto">🗑</button>
+  </div>
+  <div class="card"><div id="recordBody">読み込み中…</div></div>
+</div>
+
 <!-- ============================================ 設定 -->
 <div id="viewSettings" style="display:none">
   <div class="card">
@@ -179,7 +196,13 @@
 <!-- ============================================ プレイヤー -->
 <div id="player"><div class="inner">
   <div id="phrases"></div>
+  <div id="assessBox" style="display:none;margin-bottom:6px"></div>
   <div class="row" style="margin-top:0;align-items:center">
+    <button class="ghost" id="btnRec" title="録音して発音チェック">🎙 録音</button>
+    <button class="ghost" id="btnPlayRec" style="display:none">▶ 自分</button>
+    <button class="ghost" id="btnPlayModel" style="display:none">▶ お手本</button>
+  </div>
+  <div class="row" style="margin-top:6px;align-items:center">
     <label class="rate">🔊 速さ <input type="range" id="rate" min="0.4" max="1.5" step="0.05" value="0.9"
       style="width:110px;vertical-align:middle"> <b id="rateVal">0.9</b>x</label>
     <button class="small ghost" data-rate="0.6">ゆっくり</button>

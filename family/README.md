@@ -40,11 +40,17 @@ supabase secrets set GEMINI_API_KEY=xxxxx
 supabase secrets set GEMINI_MODEL=gemini-2.5-flash-lite
 supabase secrets set MAX_INPUT_CHARS=300
 
+# 発音評価（現行アプリの config.json の azure と同じ値）
+supabase secrets set AZURE_SPEECH_KEY=xxxxx
+supabase secrets set AZURE_SPEECH_REGION=japaneast
+
 supabase functions deploy translate
 supabase functions deploy keywords
+supabase functions deploy assess
 ```
 
 Gemini APIキーは [Google AI Studio](https://aistudio.google.com/apikey) で取得。
+Azureのキーは現行の `config.json` の `azure.key` / `azure.region` をそのまま使える。
 
 ### 3. クライアント設定
 
@@ -95,8 +101,10 @@ GitHub リポジトリの Secrets に `SUPABASE_URL` と `SUPABASE_ANON_KEY` を
 | 発音 | Web Speech API | 同じ（変更なし） |
 | 認証 | なし | メール＋パスワード（サインアップ無効） |
 | Mac | 起動が必須 | **不要** |
+| 発音評価 | Mac常駐サーバーがAzureを呼ぶ | **Edge Function経由**（キーはサーバー側のみ） |
+| ミス種類の分類 | Python（pypinyin） | **クライアントJS**（pinyin-pro） |
 
-記事モード・発音評価（Azure）は家族版の対象外。現行アプリでそのまま使える。
+記事モード（Notion同期）のみ家族版の対象外。現行アプリでそのまま使える。
 
 ---
 
