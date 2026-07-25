@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.34.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.35.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -453,6 +453,7 @@ def save_assessment(lang, text, data, source=""):
             "words": [{"w": w["word"], "s": w["score"], "e": w["error"],
                        "wp": (w.get("worst") or {}).get("name", ""),
                        "ws": (w.get("worst") or {}).get("score"),
+                       "k": w.get("kind", ""), "hd": w.get("heard", ""),
                        "ph": w.get("phoneme_scores", [])}
                       for w in data.get("words", [])],
         }
@@ -498,6 +499,11 @@ def weak_words(lang="zh", limit=60):
                     d = s["weak_ph"].setdefault(w["wp"], {"n": 0, "sum": 0})
                     d["n"] += 1
                     d["sum"] += w.get("ws") or 0
+                if w.get("k"):  # ミスの種類（R/V/T/N/F）
+                    s.setdefault("kinds", {})
+                    s["kinds"][w["k"]] = s["kinds"].get(w["k"], 0) + 1
+                    if w.get("hd"):
+                        s["heard"] = w["hd"]
             s["last"] = a["time"][:10]
             s["last_score"] = w.get("s")
     out = []
@@ -512,6 +518,14 @@ def weak_words(lang="zh", limit=60):
         if wp:
             name, d = wp[0]
             s["weak"] = {"name": name, "score": round(d["sum"] / d["n"]), "n": d["n"]}
+        kinds = s.pop("kinds", None)
+        if kinds:  # 最も多いミスの種類
+            k = max(kinds.items(), key=lambda kv: kv[1])[0]
+            try:
+                from error_kind import KIND_LABEL
+                s["kind"] = {"code": k, "label": KIND_LABEL.get(k, k), "n": kinds[k]}
+            except ImportError:
+                s["kind"] = {"code": k, "label": k, "n": kinds[k]}
         if lang == "zh":  # 文字の上に拼音を出すための対応表
             s["pairs"] = to_pinyin_pairs(s["word"])
         out.append(s)
@@ -1002,6 +1016,16 @@ class Handler(BaseHTTPRequestHandler):
         data = azure_summarize(raw, pairs)
         if not data.get("ok"):
             return self._fail(data.get("error", "評価できませんでした"))
+        # 中国語は「実際に聞こえた音」と比べてミスの種類（R/V/T/N）を判定する
+        if lang == "zh":
+            try:
+                heard, herr = AZURE.recognize(audio, locale, ctype)
+                if heard and not herr:
+                    import error_kind
+                    data["heard_text"] = heard
+                    error_kind.attach_to_words(data["words"], text, heard)
+            except Exception as e:
+                print(f"[assess] kind detection failed: {e}")
         try:
             save_assessment(lang, text, data, (q.get("source") or [""])[0])
         except Exception as e:

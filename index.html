@@ -825,16 +825,20 @@ async function loadRecord() {
 
 function weakTable(list) {
   let h = `<table class="htable wtbl"><tr>
-    <th>語</th><th>苦手な音</th><th>平均</th><th>ミス</th><th>最終</th></tr>`;
+    <th>語</th><th>ミスの種類</th><th>平均</th><th>ミス</th><th>最終</th></tr>`;
   list.forEach(w => {
     const label = w.pairs ? rubyHTML(w.pairs, w.word) : esc(w.word);
-    const weak = w.weak
-      ? `<b>${esc(w.weak.name)}</b> <span style="color:${scoreColor(w.weak.score)}">${w.weak.score}</span>`
-      : "-";
+    let kind = "-";
+    if (w.kind) {
+      kind = `<b>${esc(w.kind.code)}</b> ${esc(w.kind.label)}`
+        + (w.heard ? `<div class="sub">→${esc(w.heard)}と発音</div>` : "");
+    } else if (w.weak) {
+      kind = `<span class="sub">${esc(w.weak.name)} ${w.weak.score}点</span>`;
+    }
     h += `<tr>
       <td><span class="wword">${label}</span>
         <button class="icon" onclick="speak('${w.word.replace(/'/g, "\\'")}')">🔊</button></td>
-      <td>${weak}</td>
+      <td>${kind}</td>
       <td style="color:${scoreColor(w.avg)};font-weight:700">${w.avg}</td>
       <td class="sub">${w.miss}/${w.tries}</td>
       <td class="sub" style="white-space:nowrap">${(w.last || "").slice(5)}</td></tr>`;
@@ -1247,6 +1251,10 @@ function showWordDetail(i) {
          : "🟥 赤＝お手本と違って聞こえます（60点未満）\n";
     if (w.error === "Mispronunciation") msg += "\n判定: 発音まちがい\n";
     if (w.error === "Insertion") msg += "\n判定: 余分な音が入っています\n";
+    if (w.kind_label) {
+      msg += `\nミスの種類: ${w.kind}（${w.kind_label}）\n`;
+      if (w.expected_py && w.heard) msg += `正: ${w.expected_py} → 実際: ${w.heard}\n`;
+    }
     if (w.phoneme_scores && w.phoneme_scores.length) {
       msg += "\n音ごとの点数（正しい読み）:\n";
       w.phoneme_scores.forEach(p => { msg += `  ${p[0]} … ${p[1]}点\n`; });

@@ -58,6 +58,25 @@ class AzureSpeech:
             return None, f"Azure接続エラー: {e}"
 
 
+    def recognize(self, audio_bytes, lang="zh-CN", content_type=None):
+        """参照テキストなしの音声認識（実際に何と発音したかを得る）。"""
+        if not self.configured():
+            return "", "Azure未設定"
+        url = (f"https://{self.region}.stt.speech.microsoft.com/speech/recognition"
+               f"/conversation/cognitiveservices/v1?language={lang}")
+        req = urllib.request.Request(url, data=audio_bytes, method="POST")
+        req.add_header("Ocp-Apim-Subscription-Key", self.key)
+        req.add_header("Content-Type",
+                       content_type or "audio/wav; codecs=audio/pcm; samplerate=16000")
+        req.add_header("Accept", "application/json")
+        try:
+            with urllib.request.urlopen(req, timeout=45) as r:
+                res = json.loads(r.read().decode("utf-8"))
+            return res.get("DisplayText", ""), None
+        except Exception as e:
+            return "", str(e)
+
+
 TONE_RE = re.compile(r"([a-zü]+)([1-5])", re.I)
 
 # 声調記号つき母音 → 声調番号
