@@ -4,7 +4,9 @@
 
 ```
 family/
+├── deploy.sh                                … デプロイ補助（check / db / functions / all）
 ├── supabase/
+│   ├── config.toml                          … CLI設定（★無いと link も db push も動かない）
 │   ├── migrations/
 │   │   ├── 20260726000001_init.sql          … 7テーブル・RLS・トリガー
 │   │   ├── 20260726000002_assessments.sql   … 発音評価の記録（★流し忘れ注意）
@@ -28,43 +30,106 @@ family/
 
 ## セットアップ手順
 
-### 1. Supabase プロジェクト作成
+> **★ すべての `supabase` コマンドは `apps/family/` で実行する。**
+> CLI は「カレントディレクトリの `supabase/` フォルダ」を見るため、場所を間違えると
+> 「supabase directory not found」で止まる。
+>
+> ```bash
+> cd ~/work/englishLearningApp/apps/family
+> bash deploy.sh check     # 前提が揃っているか確認（何も変更しない）
+> ```
 
-1. [supabase.com](https://supabase.com) で新規プロジェクト（**リージョン Tokyo / Free**）
-2. **Authentication → Providers → Email → "Enable email signup" を OFF**（第三者の登録を防ぐ）
-3. SQL Editor でマイグレーションを**3本とも**実行する（順番どおり）
-   1. `supabase/migrations/20260726000001_init.sql`
-   2. `supabase/migrations/20260726000002_assessments.sql`
-   3. `supabase/migrations/20260726000003_usage_units.sql`
-   ★ 2本目を忘れると `assessments` が無く、**発音評価と📊記録タブが動かない**
-   ★ 3本目を忘れると **発音評価の原価が測れない**（GO/NO-GO 条件Cの判定材料が取れない）＋ **keepalive が落ちる**（`public.ping()` が無いため）
-4. Authentication → Users → **Add user** で家族分を手動作成（`email_confirm` をON）
-   - 娘のアカウントは親のエイリアス（`you+daughter@example.com`）でよい
-
-### 2. Edge Function のデプロイ
+### 0. CLI の準備（初回だけ）
 
 ```bash
 npm i -g supabase
-supabase login
-supabase link --project-ref <PROJECT_REF>
+supabase --version
+supabase login           # ブラウザが開く。アクセストークンを発行して貼る
+```
 
-# APIキーはここにのみ置く（クライアントには絶対に出さない）
-# ↓ 値は下の「キーの取得元」を参照。手で打たずコピペする
+> Docker は**ローカル実行**（`supabase functions serve`）に必要。
+> **デプロイだけなら通常は不要**。求められたら Docker Desktop を入れる。
+
+### 1. Supabase プロジェクト作成とリンク
+
+1. [supabase.com](https://supabase.com) で新規プロジェクト（**リージョン Tokyo / Free**）
+2. **Authentication → Providers → Email → "Enable email signup" を OFF**（第三者の登録を防ぐ）
+3. プロジェクトを CLI に紐付ける
+
+```bash
+cd ~/work/englishLearningApp/apps/family
+supabase projects list                    # REFERENCE ID 列を控える
+supabase link --project-ref <REFERENCE_ID>
+```
+
+> DBパスワードを聞かれる。プロジェクト作成時に決めたもの。忘れたら
+> Dashboard → Settings → Database → Reset database password で再設定できる。
+
+4. Authentication → Users → **Add user** で家族分を手動作成（`email_confirm` をON）
+   - 娘のアカウントは親のエイリアス（`you+daughter@example.com`）でよい
+
+### 2. マイグレーションの適用
+
+```bash
+bash deploy.sh db          # = supabase db push（3本を順番に適用）
+```
+
+> **Dashboard の SQL Editor に貼っても同じ**だが、`db push` なら順番も適用済み管理も
+> CLI がやる。手で貼る場合は `supabase/migrations/` の3本を**番号順に**実行すること。
+
+| # | ファイル | 忘れると |
+|---|---|---|
+| 1 | `20260726000001_init.sql` | 何も動かない |
+| 2 | `20260726000002_assessments.sql` | **発音評価と📊記録タブが全滅** |
+| 3 | `20260726000003_usage_units.sql` | **原価が測れない**（GO/NO-GO 条件C）＋ **keepalive が落ちる**（`public.ping()` が無い） |
+
+適用できたかの確認 — SQL Editor で `select public.ping();` が時刻を返せばOK。
+
+### 3. Edge Function のデプロイ
+
+**Dashboard の「Create new edge function」画面は使わない。** 関数3本と共有モジュールは
+リポジトリにあり、手で貼ると git と乖離する。CLI から出す。
+
+まず**シークレットを登録**する（関数から参照される。クライアントには絶対に出ない）。
+
+```bash
+cd ~/work/englishLearningApp/apps/family
+
 supabase secrets set GEMINI_API_KEY=<GOOGLE_API_KEY>
 supabase secrets set GEMINI_MODEL=gemini-2.5-flash-lite
 supabase secrets set MAX_INPUT_CHARS=300
 
-# 発音評価
 supabase secrets set AZURE_SPEECH_KEY=<azure.key>
 supabase secrets set AZURE_SPEECH_REGION=japaneast
-supabase secrets set AZURE_SPEECH_TIER=f0        # 無料枠。S0にしたら s0 に変える
+supabase secrets set AZURE_SPEECH_TIER=f0        # 無料枠。S0にしたら s0
 
+supabase secrets list                            # 6つ入ったか確認
+```
+
+つぎに**デプロイ**する。
+
+```bash
+bash deploy.sh functions
+```
+
+やっていることは3行だけ。
+
+```bash
 supabase functions deploy translate
 supabase functions deploy keywords
 supabase functions deploy assess
 ```
 
-### キーの取得元（既に手元にある）
+| 補足 | |
+|---|---|
+| `_shared/common.ts` | 先頭が `_` のフォルダは**関数として扱われない**。各関数が `../_shared/common.ts` を相対importしており、**デプロイ時に自動で同梱**される。個別にデプロイする必要はない |
+| JWT検証 | `config.toml` で3本とも `verify_jwt = true`。ログイン必須なのでこのまま |
+| 反映確認 | Dashboard → Edge Functions に3本並び、各関数の Logs でエラーが出ていないこと |
+
+> **デプロイしてもすぐには動かない。** シークレット未設定だと 502（LLM未設定）が返る。
+> 先に `supabase secrets list` で確認すること。
+
+#### キーの取得元（既に手元にある）
 
 | Secret | 取得元 | 備考 |
 |---|---|---|
@@ -84,7 +149,7 @@ supabase functions deploy assess
 > 家族が同時に録音すると429になるため、Edge Function 側で2回まで再試行する。
 > 中国語は1回の評価で2回呼ぶので消費は2倍（実質2.5時間ぶん）。
 
-### 3. クライアント設定
+### 4. クライアント設定
 
 `web/config.js` の2値を、Supabase の Project Settings → API から書き換える。
 
@@ -95,7 +160,7 @@ export const CONFIG = {
 };
 ```
 
-### 4. データ移行
+### 5. データ移行
 
 ```bash
 cd scripts
@@ -109,7 +174,7 @@ python3 migrate_to_supabase.py --data ../../local/data
 
 > データは `apps/local/data/` にある（`scripts/` から見て `../../local/data`）。
 
-### 5. デプロイ（Vercel Hobby）
+### 6. デプロイ（Vercel Hobby）
 
 **`web/` をプロジェクトのルートディレクトリとして配置する。** 必要なファイルは同梱済み。
 
@@ -121,7 +186,7 @@ python3 migrate_to_supabase.py --data ../../local/data
 
 > iOS はホーム画面追加時に manifest の `icons` を見ないため、`apple-touch-icon.png` が別に要る（`index.html` で参照済み）。
 
-### 6. keepalive
+### 7. keepalive
 
 1. GitHub リポジトリの Secrets に `SUPABASE_URL` と `SUPABASE_ANON_KEY` を登録する
 2. **Actions タブから `keepalive` を手動実行（Run workflow）して、緑になることを確認する**
@@ -130,7 +195,7 @@ python3 migrate_to_supabase.py --data ../../local/data
 > DBに必ず到達させるため `public.ping()` を呼ぶ（migration 3本目で作成）。
 > テーブルを直接読む方式だと、RLSポリシーを変えたときに黙って壊れるため。
 
-### 7. 動作確認
+### 8. 動作確認
 
 下の「受け入れ確認」を実機（iPhone）で1つずつ確認する。
 
@@ -149,7 +214,6 @@ python3 migrate_to_supabase.py --data ../../local/data
 | Mac | 起動が必須 | **不要** |
 | 発音評価 | Mac常駐サーバーがAzureを呼ぶ | **Edge Function経由**（キーはサーバー側のみ） |
 | ミス種類の分類 | Python（pypinyin） | **クライアントJS**（pinyin-pro） |
-
 | 家族間の可視性 | — | **なし**（互いのデータもプロフィールも見えない） |
 
 記事モード（Notion同期）のみ家族版の対象外。現行アプリでそのまま使える。

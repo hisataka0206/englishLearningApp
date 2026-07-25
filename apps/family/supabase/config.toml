@@ -1,0 +1,37 @@
+# Supabase CLI の設定。
+# ★ このファイルが無いと `supabase link` も `supabase db push` も動かない。
+#   （CLI は「カレントディレクトリの supabase/config.toml」を探す）
+#
+# project_id はローカル用の識別子。リモートのプロジェクト参照(ref)ではない。
+# リモートとの紐付けは `supabase link --project-ref <ref>` が
+# supabase/.temp/ に保存する（gitには入らない）。
+project_id = "englishlearningapp-family"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+# ── Edge Functions ───────────────────────────────────────────────
+# verify_jwt = true（既定）＝ Supabase 側でJWTを検証してから関数に入る。
+# 家族版は全機能ログイン必須なので、3本とも true のままにする。
+# （関数内でも getUser() で再確認している。二重だが安全側に倒す）
+[functions.translate]
+verify_jwt = true
+
+[functions.keywords]
+verify_jwt = true
+
+[functions.assess]
+verify_jwt = true
+
+# _shared/ は先頭が「_」のため関数として扱われない（共有モジュール置き場）。
+# 各関数から ../_shared/common.ts を相対importしており、デプロイ時に同梱される。

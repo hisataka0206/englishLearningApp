@@ -10,3 +10,6 @@ recordings/
 
 # テストの実行時生成物
 tests/last_results.json
+
+# Supabase CLI がリンク情報を置く場所（プロジェクト参照やアクセストークン）
+apps/family/supabase/.temp/
