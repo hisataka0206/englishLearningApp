@@ -4,7 +4,7 @@
 対象: Supabase + PWA のマルチユーザー版（**記事フィードと課金を含まない**）
 
 > **本書だけで実装できることを目標とする。** 事業版の要素は意図的に除外している。
-> 移植対象の機能一覧は `current-app-inventory.md` を参照（本書と対で使う）。
+> 移植対象の機能一覧は `current-app-spec.md` を参照（本書と対で使う）。
 
 ---
 
@@ -125,7 +125,7 @@ sequenceDiagram
 
 - Supabase Auth によるログイン（家族3人）
 - Postgres + RLS による個人別のデータ分離
-- 現行アプリの全機能の移植（`current-app-inventory.md` の判定に従う）
+- 現行アプリの全機能の移植（`current-app-spec.md` の判定に従う）
 - クラウドLLM（Gemini）による翻訳・キーワード抽出
 - データエクスポート
 - PWA（manifestのみ）
@@ -135,7 +135,7 @@ sequenceDiagram
 記事フィード / Stripe課金 / 課金画面 / 利用規約・特商法表記・プライバシーポリシー / ソーシャルログイン
 
 > **訂正（2026-07-26）**：当初この一覧に「弱点レポート」を含めていたが、これは誤り。
-> `current-app-inventory.md` が**発音評価機能（Azure Speech）の実装前に書かれており**、
+> `current-app-spec.md` が**発音評価機能（Azure Speech）の実装前に書かれており**、
 > 棚卸しから漏れていたことに起因する。発音評価と「📊 記録」タブは本アプリの中核機能のため、
 > **家族版に含める**（§6.6 / §12.2・12.3 に追記）。
 
@@ -238,7 +238,7 @@ flowchart TD
 | 画面 | 内容 |
 |---|---|
 | **ログイン** | メール/パスワード入力、エラー表示のみ。サインアップ導線なし |
-| **メイン** | 現行の `#viewMain` をそのまま移植（`current-app-inventory.md` §1.2, §1.3） |
+| **メイン** | 現行の `#viewMain` をそのまま移植（`current-app-spec.md` §1.2, §1.3） |
 | **履歴** | 現行の `#viewHistory` をそのまま移植（同 §1.4） |
 | **プレイヤー** | 現行の `#player` をそのまま移植（同 §1.5） |
 | **アカウント設定** | 表示名 / 既定言語 / 発音速度 / 区切りモード / **家族の最終利用日** / エクスポート / ログアウト |
@@ -422,7 +422,7 @@ create policy "own read" on usage_logs    for select using (auth.uid() = user_id
 1. JWT検証 → `user_id` 取得
 2. `japanese` の長さ検証（**300文字上限**、超過なら413）
 3. `subscriptions.plan` を取得 → クォータ判定関数を通す（`family` は無条件で通過）
-4. `current-app-inventory.md` §8.1 のプロンプトで Gemini を呼ぶ（temperature 0.3）
+4. `current-app-spec.md` §8.1 のプロンプトで Gemini を呼ぶ（temperature 0.3）
 5. 応答から前後の引用符を除去
 6. `usage_logs` に `kind='translate'` で記録（input/output トークン数を含む）
 7. `profiles.last_active_at` を更新
@@ -445,9 +445,9 @@ create policy "own read" on usage_logs    for select using (auth.uid() = user_id
 
 **処理**
 1〜3は translate と同じ。以降：
-4. `current-app-inventory.md` §8.2 のプロンプトでJSON出力を要求
+4. `current-app-spec.md` §8.2 のプロンプトでJSON出力を要求
 5. パース失敗時は `/\{.*\}/s` で抽出して再パース
-6. **word/meaning 入替補正を適用**（`current-app-inventory.md` §7.1。移植必須）
+6. **word/meaning 入替補正を適用**（`current-app-spec.md` §7.1。移植必須）
 7. 最大3件に切り詰め
 8. `usage_logs` に `kind='keywords'` で記録
 
@@ -579,7 +579,7 @@ create policy "own read" on usage_logs    for select using (auth.uid() = user_id
 |---|---|
 | `sentences` 件数 | 2ファイルのレコード数合計と一致 |
 | `words` 件数 | 同上 |
-| `fails` 件数 | **en側のみの合計**（`record_fail` のバグでzh側は空のはず。`current-app-inventory.md` §11.1） |
+| `fails` 件数 | **en側のみの合計**（`record_fail` のバグでzh側は空のはず。`current-app-spec.md` §11.1） |
 | `practices` 件数 | 全ファイルの `practices` 配列の長さ合計 |
 | `words.source_id` | NULLでない行が、移行前の `source_id` 保有件数と一致 |
 | ランダム10件 | 目視で日本語・訳文・区切り・日付を照合 |
@@ -688,7 +688,7 @@ create policy "own read" on usage_logs    for select using (auth.uid() = user_id
 - [ ] アカウント設定画面
 - [ ] エクスポート機能（現行のMarkdown生成を移植）
 - [ ] PWA manifest とアイコン
-- [ ] **`current-app-inventory.md` の全32項目 + §7の12項目を「移植/廃止/変更」で埋める**
+- [ ] **`current-app-spec.md` の全32項目 + §7の12項目を「移植/廃止/変更」で埋める**
 
 ### 12.4 移行と確認
 
@@ -696,13 +696,13 @@ create policy "own read" on usage_logs    for select using (auth.uid() = user_id
 - [ ] ドライラン → 検証（§8.4）→ 本実行
 - [ ] GitHub Actions の keepalive 設定
 - [ ] **娘のアカウントで実機（iPhone/iPad）から動作確認**
-- [ ] voice が存在するか実機で確認（`current-app-inventory.md` §5）
+- [ ] voice が存在するか実機で確認（`current-app-spec.md` §5）
 
 ---
 
 ## 13. 受け入れ基準
 
-1. `current-app-inventory.md` の全項目が「移植/廃止/変更」で埋まっている
+1. `current-app-spec.md` の全項目が「移植/廃止/変更」で埋まっている
 2. 家族3人がそれぞれログインし、**互いのデータが見えない**（RLSの動作確認）
 3. アカウント設定で**家族の最終利用日だけ**が見える
 4. 既存データが全件移行され、§8.4 の検証項目を満たす
@@ -718,7 +718,7 @@ create policy "own read" on usage_logs    for select using (auth.uid() = user_id
 
 ```mermaid
 flowchart LR
-    INV["current-app-inventory.md<br/>現行機能の棚卸し"]:::inv
+    INV["current-app-spec.md<br/>現行機能の棚卸し"]:::inv
     FAM["family-edition-spec.md<br/><b>家族版＝ベースライン</b>"]:::fam
     DIFF["saas-diff-spec.md<br/>事業版の差分"]:::diff
     SAAS(["事業版の完全な仕様"]):::result
@@ -747,7 +747,7 @@ flowchart LR
 
 ### 関連ドキュメント
 
-- `current-app-inventory.md` — **移植チェックリスト（本書と対で使う）**
+- `current-app-spec.md` — **移植チェックリスト（本書と対で使う）**
 - `saas-diff-spec.md` — **事業版の差分仕様書（本書がベースライン）**
 - `../20-plans/status-summary.md` — 検討の現況整理
 - `../30-research/saas-migration-study.md` — 事業版の背景・意思決定・法務要件

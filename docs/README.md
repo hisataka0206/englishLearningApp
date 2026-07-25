@@ -8,7 +8,8 @@
 | いくらで、いくら儲かるのか | `00-business/pricing-plan.md` → `00-business/revenue-forecast.md` |
 | 事業に進むかどうかの判断 | `00-business/go-nogo-plan.md` |
 | 事業を始めた後、いつ畳むか | `00-business/exit-plan.md` |
-| **今から何を作るのか** | `10-specs/family-edition-spec.md` ＋ `10-specs/current-app-inventory.md` |
+| 今、現行アプリがどう動いているか | `10-specs/current-app-spec.md` |
+| **今から何を作るのか** | `10-specs/family-edition-spec.md` ＋ `10-specs/current-app-spec.md` 第III部 |
 | 事業版で何が増えるのか | `10-specs/saas-diff-spec.md` |
 | どの順で進めるのか | `20-plans/execution-plan.md` |
 | 家族版で何を測るのか | `20-plans/family-evaluation-plan.md` |
@@ -29,9 +30,10 @@ docs/
 │   └── exit-plan.md              撤退計画（事業開始「後」の基準）
 │
 ├── 10-specs/        仕様 — 何を作るか
-│   ├── current-app-spec.md       現行アプリ（Mac常駐）の仕様
-│   ├── current-app-inventory.md  現行機能の棚卸し（移植チェックリスト）
-│   ├── notion-sync-spec.md       記事モード（Notion同期）の仕様
+│   ├── current-app-spec.md       現行アプリ（Mac常駐）の仕様 ※3部構成
+│   │                               I. 概要とねらい
+│   │                               II. 記事モード（Notion同期）
+│   │                               III. 実装棚卸し＝移植チェックリスト
 │   ├── family-edition-spec.md    ★家族版の仕様書（ベースライン）
 │   └── saas-diff-spec.md         ★事業版の差分仕様書
 │
@@ -57,7 +59,7 @@ flowchart TB
     GNG["go-nogo-plan.md<br/>GO/NO-GO判断"]:::biz
     EXIT["exit-plan.md<br/>撤退計画"]:::biz
 
-    INV["current-app-inventory.md<br/>現行の棚卸し"]:::spec
+    INV["current-app-spec.md<br/>現行アプリ仕様<br/><i>第III部＝移植チェックリスト</i>"]:::spec
     FAM["family-edition-spec.md<br/><b>家族版仕様</b>"]:::spec
     DIFF["saas-diff-spec.md<br/>事業版の差分"]:::spec
 

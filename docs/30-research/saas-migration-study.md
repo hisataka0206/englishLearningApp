@@ -13,7 +13,7 @@
 >
 > | 用途 | 正典 |
 > |---|---|
-> | 現行機能の移植チェックリスト | **`../10-specs/current-app-inventory.md`** |
+> | 現行機能の移植チェックリスト | **`../10-specs/current-app-spec.md`** |
 > | 家族版の実装仕様 | **`../10-specs/family-edition-spec.md`** |
 > | 事業版の差分仕様 | **`../10-specs/saas-diff-spec.md`** |
 > | 情報源・ライセンス | `content-sources.md` |
@@ -906,7 +906,7 @@ create policy "own rows" on sentences
 
 ### 関連ドキュメント
 
-- `../10-specs/current-app-inventory.md` — 現行機能の移植チェックリスト
+- `../10-specs/current-app-spec.md` — 現行機能の移植チェックリスト
 - `../10-specs/family-edition-spec.md` — **家族版の実装仕様（正典）**
 - `../10-specs/saas-diff-spec.md` — **事業版の差分仕様（正典）**
 - `../20-plans/status-summary.md` — 検討の現況整理

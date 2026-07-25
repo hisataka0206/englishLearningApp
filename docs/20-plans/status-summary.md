@@ -201,7 +201,7 @@ flowchart TB
     SS["status-summary.md<br/>現況整理（本書）"]:::meta
 
     subgraph IMPL["実装仕様（これを見て作る）"]
-        INV["current-app-inventory.md<br/>現行機能の棚卸し<br/><i>移植チェックリスト</i>"]:::inv
+        INV["current-app-spec.md<br/>現行機能の棚卸し<br/><i>移植チェックリスト</i>"]:::inv
         FAM["family-edition-spec.md<br/><b>家族版＝ベースライン</b>"]:::fam
         DIFF["saas-diff-spec.md<br/><b>事業版の差分</b>"]:::diff
     end
@@ -232,7 +232,7 @@ flowchart TB
 
 | 目的 | 読むもの |
 |---|---|
-| 今から実装する | `../10-specs/current-app-inventory.md` + `../10-specs/family-edition-spec.md` |
+| 今から実装する | `../10-specs/current-app-spec.md` + `../10-specs/family-edition-spec.md` |
 | 事業版に進むとき | 上記 + `../10-specs/saas-diff-spec.md` |
 | なぜこの構成なのか | `../30-research/saas-migration-study.md` |
 | いくらにするか | `../00-business/pricing-plan.md` |
@@ -242,7 +242,7 @@ flowchart TB
 
 ### 関連ドキュメント
 
-- `../10-specs/current-app-inventory.md` — **現行機能の移植チェックリスト**
+- `../10-specs/current-app-spec.md` — **現行機能の移植チェックリスト**
 - `../10-specs/family-edition-spec.md` — **家族版の仕様書（実装着手可）**
 - `../10-specs/saas-diff-spec.md` — **事業版の差分仕様書**
 - `../00-business/exit-plan.md` — 撤退ラインと最低コスト退避先

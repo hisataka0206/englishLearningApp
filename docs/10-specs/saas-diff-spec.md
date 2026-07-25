@@ -463,7 +463,7 @@ flowchart LR
 ### 関連ドキュメント
 
 - `family-edition-spec.md` — **ベースライン（本書と対で使う）**
-- `current-app-inventory.md` — 現行機能の移植チェックリスト
+- `current-app-spec.md` — 現行機能の移植チェックリスト
 - `../30-research/saas-migration-study.md` — 事業版の背景・意思決定・法務要件
 - `../00-business/pricing-plan.md` — 料金プラン・原価計算
 - `../30-research/content-sources.md` — 情報源の評価（**ライセンスの正典**）
