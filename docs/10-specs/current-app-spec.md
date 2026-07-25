@@ -47,7 +47,9 @@
 
 利用者はまず対象言語（英語／中国語）をボタンで選ぶ。日本語を入力して翻訳を実行すると、Mac上で常駐する小さなサーバー（Python標準ライブラリのみ）が[[ローカルLLM]]に問い合わせ、自然な訳文を返す。訳文が出た時点で即座に音声合成による[[発音]]が始まり、同時に[[重要キーワード]]を抽出して単語候補として提示する。中国語モードでは[[pypinyin]]により全文と各単語の拼音を併記する。
 
-訳文は画面上でタップして直接編集でき、区切りボタンで発音の区切り位置を指定できる（自動の節分割に対する追加指定）。編集内容は下部の[[練習ウィンドウ]]の節チップに即時反映される。
+訳文は画面上でタップして直接編集できる。発音の区切りは「✂️ 区切り編集」ボタンで格子UIに切り替え、**文字（中国語）または語（英語）のすき間をタップして**指定する。編集内容は下部の[[練習ウィンドウ]]の節チップに即時反映される。
+
+> **区切り編集を開くと以後は自動の節分割を行わず、指定した区切りだけを使う**（`explicitBreaks` フラグ）。区切りを手打ちの `/` で入れた場合も同様。自動分割と併用されるのは、どちらも行っていないときだけ。
 
 保存すると、文・日本語・区切り位置・拼音・登録日・失敗履歴・実施履歴を1レコードとして[[固有ID]]付きで保持し、[[GAS]]経由でGoogle Driveの指定フォルダにJSONとして書き込む（人間が読みやすいMarkdownビューも同時生成）。英語と中国語はそれぞれ別ファイル（`sentences.json` / `sentences_zh.json` など）に保存される。
 
@@ -55,17 +57,19 @@
 
 ## 画面構成
 
-ナビゲーションは「[[自分の文]]」「[[記事]]」の2系統。前者は**自分が言いたいことを外国語化して練習する**機能、後者は**外部データ（Notion記事）を取り込んで練習する**機能で、この2つがアプリの柱である。
+ヘッダーのナビゲーションは「[[自分の文]]」「[[記事]]」「[[記録]]」の**3系統**（＋再読込ボタン）。「自分の文」は**自分が言いたいことを外国語化して練習する**機能、「記事」は**外部データ（Notion記事）を取り込んで練習する**機能で、この2つがアプリの柱である。
 
-メイン画面は「日本語入力 → 訳文の表示・編集 → 発音練習」に特化する。履歴はヘッダーの「履歴」ボタンで別ページに分離し、練習中は視界に入らないようにしている。履歴ページは日付別（文と単語をまとめて表示）・文のみ・単語のみのタブと検索を備え、表形式で見つけやすくしている。
+「自分の文」の中は「作成」「履歴」の2サブタブに分かれる。作成側は「日本語入力 → 訳文の表示・編集 → 発音練習」に特化し、練習中に履歴が視界に入らないようにしている。履歴側は日付別（文と単語をまとめて表示）・文のみ・単語のみのタブと検索を備え、表形式で見つけやすくしている。
 
-画面下部の[[フレーズプレイヤー]]は、節チップ・再生/一時停止・速度調整（プリセットと保存）・区切りモード（ふつう／細かめ／文単位、既定は細かめ）を持ち、長文でも領域の高さを制限して他の操作を妨げない。
+画面下部の[[フレーズプレイヤー]]は、節チップ・再生/一時停止・速度調整（プリセットと保存）・区切りモード（ふつう／細かめ／文単位、既定は細かめ）・録音による発音評価を持ち、長文でも領域の高さを制限して他の操作を妨げない。
 
-「[[記録]]」ページには発音評価の履歴と[[苦手な音]]の集計（過去30日）を置き、拼音を字の上に重ねて表示する。
+「記録」には発音評価の履歴と[[苦手な音]]の集計（過去30日）を置き、拼音を字の上に重ねて表示する。
 
 ## データと保存
 
-保存の実体は Google Drive 上の JSON ファイル（[[GAS]]の Web アプリ経由でアクセス）。ローカルの `data/` を作業コピーとし、変更のたびに直列化してアップロードする（同名ファイルの二重生成を防止）。起動時にローカルが空なら Drive から英語・中国語の両データを取り込むため、機種変更や再起動にも耐える。
+保存の実体は Google Drive 上の JSON ファイル（[[GAS]]の Web アプリ経由でアクセス）。ローカルの `data/` を作業コピーとし、変更のたびに直列化してアップロードする（同名ファイルの二重生成を防止）。起動時にローカルが空なら Drive から取り込むため、機種変更や再起動にも耐える。
+
+> **push と pull で対象ファイルが異なる。** push は10ファイル（英中の `sentences`/`words` の json+md 各4本、`articles_zh.json`、`assessments.json`）だが、起動時の pull は5ファイル（`sentences*.json` / `words*.json` / `articles_zh.json`）のみで、**`assessments.json` は pull されない**。ローカルの `data/` を失うと発音評価の履歴だけ復元されない（§11.3 参照）。
 
 失敗履歴は[[Notion]]の中国語学習運用（該当箇所に「Fail」コメントを付ける方式）に着想を得ており、文ごとにラベル＋日時で蓄積する（既定ラベルは「Fail」の1種）。
 
@@ -77,7 +81,7 @@ UIの言語別文言は `LABELS` 辞書に、翻訳・キーワード抽出の�
 
 翻訳は自宅MacのローカルLLMで動くため、**Macが起動している必要がある**（この制約を外すのが家族版の目的）。外出先のスマホからは[[Tailscale]]等で自宅Macのサーバーに接続する運用を想定し、利用者はTailscaleの存在を意識せずホーム画面のアイコンから使えるようにしている（サーバーはログイン時自動起動）。GitHub Actions等の外部環境からローカルLLMへ直接アクセスすることはできない。
 
-録音（発音評価）はブラウザの `navigator.mediaDevices` を使うため **HTTPS が必須**（`enable_https.sh` で証明書を用意する）。
+録音（発音評価）はブラウザの `navigator.mediaDevices` を使うため **HTTPS（または `localhost`）が必須**。他端末から使うには `enable_https.sh` で証明書を用意する。
 
 翻訳・キーワードの品質はモデルに依存する。既定は軽量な `qwen2.5:1.5b`（速度優先）で、品質を上げたい場合は画面のプルダウンで大きめのモデルに切り替えられる。
 
@@ -90,9 +94,10 @@ UIの言語別文言は `LABELS` 辞書に、翻訳・キーワード抽出の�
 | `azure_speech.py` | Azure AI Speech の発音評価クライアント |
 | `error_kind.py` | 発音誤りの R/V/T/N/F 分類 |
 | `notion_client.py` | Notion REST の薄いラッパ（記事解析・失敗履歴の書き戻し） |
+| `tools_import_fails.py` | Notionのインライン失敗コメントを `articles_zh.json` へ取り込むインポーター（冪等）。通常APIは音節アンカーを返さないため、MCPの get-comments 出力を渡す設計 |
 | `google_drive.py` / `drive_auth.py` | GAS/OAuth の Drive クライアント |
 | `gas/Code.gs` | Drive書き込み用のGASバックエンド |
-| `config.json` | [[外部設定ファイル]]（保存先・モデル・失敗ラベル・Notion・Azure。git管理外） |
+| `config.json` / `config.example.json` | [[外部設定ファイル]]（保存先・モデル・失敗ラベル・Notion・Azure）。`config.json` はgit管理外、`.example` が雛形 |
 | `setup.sh` / `enable_https.sh` | 常時起動セットアップ / HTTPS有効化 |
 
 ---
@@ -110,9 +115,9 @@ Notionで運用中の[[中国語勉強用記事]]（週1本・約600字・全文
 
 ## 全体構成（既存温存・UI流用）
 
-現行の画面はそのまま維持し、「[[記事]]」ページを1つ追加してヘッダーから切り替える（履歴ページと同じナビ方式）。記事ページのUIは既存部品を流用する。
+現行の画面はそのまま維持し、ヘッダーナビに「[[記事]]」を1系統追加する。記事ページのUIは既存部品を流用する。
 
-- 記事一覧（履歴ページの表形式を流用）。学習日と[[Nomiss率]]を表示し、学習済みは背景をグレー化する
+- 記事一覧（履歴サブタブの表形式を流用）。**最終学習日・学習回数・[[Nomiss率]]・未反映Fail数**を表示し、学習済みは背景をグレー化する
 - 記事を開くと句が並び、各句は既存の[[フレーズプレイヤー]]（節分割・再生/一時停止・速度・タップ再生）で練習
 - 拼音表示・[[音声合成]]（zh-CN）・Fail記録は既存機能をそのまま利用
 - 重要語彙は既存の単語帳表示を流用
@@ -124,17 +129,33 @@ Driveに `articles_zh.json` を追加（既存の `sentences_zh.json` 等とは�
 
 ```
 Article {
-  id: 固有ID,
-  notion_page_id: 記事のNotionページID,
-  title: "2026-07-01 北京银河通用…",
-  date: "2026-07-01",
-  source_url: 原文のURL,
-  sentences: [ { idx: 1, zh: "中文…", pinyin: "pīnyīn…", ja: "日本語訳…",
-                 fails: [ {label, syllable, time} ] } , … ],
-  vocab: [ { zh, pinyin, ja } … ],
-  imported_at, updated_at
+  id, notion_page_id, date,
+  title, zh_title, jp_title,     // 表示用タイトル（中文/日本語）
+  source_url,                    // 原文のURL（記事ページ先頭に表示）
+  total_chars,                   // Nomiss率の分母
+  notion_fail_table_id,          // 書き戻し先テーブルのブロックID
+  imported_at,
+
+  sentences: [ { idx, zh, pinyin, ja,
+                 pairs,          // [[文字, 拼音], …] 1文字表示・ルビ用
+                 breaks } … ],   // 節区切り位置（この文字indexの後で区切る）
+
+  // ★ fails は sentence 配下ではなく Article 直下の1本の配列
+  fails: [ { idx,               // 句番号
+             ci,                // 句内の文字index
+             char, syllable,    // 該当の漢字・拼音
+             label,             // F / R / V / T / N
+             time,
+             pushed,            // Notionへ書き戻し済みか（未反映数のバッジに使う）
+             sessioned } … ],   // 勉強完了の集計に算入済みか
+
+  sessions: [ { date, misses, total, nomiss } … ],   // 「勉強完了」ごとの記録
+
+  vocab: [ { zh, pinyin, ja, pairs } … ]
 }
 ```
+
+> `updated_at` は**書き込まれていない**（存在しないフィールド）。
 
 拼音はNotion側の[[全小文字]]表記をそのまま採用（アプリの自動生成では上書きしない）。
 
@@ -164,23 +185,33 @@ Notion側で対象の親ページ（および子記事）にインテグレー�
 2. `中文：` を境界にした連続ブロック
 3. `1.` `2.` … の番号付きリスト形式
 
-いずれも直後の日本語トグル（details）から訳を取得し、重要語彙表を `vocab` として取得する。既存のインラインFailがあれば `fails` に読み込む（双方向の読み取り側）。
+日本語訳は **`日本語：` で始まる行**、または直後の日本語トグル（details）から取得する（`日本語：` 行が優先）。重要語彙表を `vocab` として取得する。
 
-取り込み後はオフラインでも練習でき、句単位で発音・Fail記録が可能。
+取り込みは**3件ずつのループ**で行う（未取り込みが尽きるまで `limit: 3` を繰り返す）。取り込み後はオフラインでも練習でき、句単位で発音・Fail記録が可能。
+
+既存のインラインFailの読み込みは `tools_import_fails.py` が担う（Notion通常APIは音節アンカーを返さないため、MCPの get-comments 出力を渡す）。
 
 ## アプリ → Notion（失敗履歴の書き戻し）
 
 **方式：記事ページ末尾に「失敗履歴」テーブルを作成/更新する。** インラインコメントの新規作成はAPIで不可能なため。
 
-- 記事の末尾（重要語彙表の下）に見出し「## 失敗履歴（アプリ記録）」とテーブルを1つ設ける
-- 列：`日付` / `句` / `該当（拼音）` / `該当（漢字）` / `ラベル`
+- 記事の末尾（重要語彙表の下）に見出し2「失敗履歴（アプリ記録）」とテーブルを1つ設ける（探索は本文に「失敗履歴」を含む見出しの部分一致）
+- 列：**`日付` / `句` / `漢字` / `拼音` / `ラベル`**（`notion_client.py` の `FAIL_HEADER`。**漢字が拼音より先**）
 - 既存のインラインFail運用とは別系統として明示（見出しで区別）
 
 **同期タイミングは手動ボタンのみ。** Failはアプリ内（Drive）に随時記録し、「Notionへ反映」ボタンでまとめて書き戻す（Fail都度の自動送信はしない）。未反映のFail件数はバッジで表示する。
 
 ## 失敗の粒度
 
-句単位に加えて、**1文字単位**でFailを付けられる。長押し（PC は右クリック）で F/R/V/T/N の失敗種別を選択する。粒度は `fails[].syllable` に該当拼音（と対応漢字）を保持し、失敗履歴テーブルに反映する。
+句単位に加えて、**1文字単位**でFailを付けられる。**長押し450ms**（PC は右クリック）で F/R/V/T/N の失敗種別を選択する。位置は `fails[].idx`（句番号）と `ci`（文字index）で保持し、該当の `char` / `syllable` とともに失敗履歴テーブルへ反映する。
+
+> ラベル定義 F/R/V/T/N は `config.json` ではなく **`server.py` の定数 `ARTICLE_FAIL_LABELS`**（code + name）にあり、`/api/health` の `article_fail_labels` で配信される。「自分の文」側の `fail_labels`（`config.json` 由来・既定は `["Fail"]`）とは別物。
+
+## 学習の記録（勉強完了）
+
+記事ページの「✅ 勉強完了」ボタンで**セッションを確定**する。未集計（`sessioned` が偽）のFailを数えて `nomiss = round(100 × (total_chars − misses) / total_chars, 1)`（**百分率・小数1桁**。`total_chars` が0のときは1として計算）を算出し、`sessions[]` に `{date, misses, total, nomiss}` を1件追加する。記事一覧にはここで確定した**最終学習日・学習回数・Nomiss率**が表示され、学習済みの行は背景がグレーになる。
+
+節の区切りは記事側でも「✂️ 区切り編集」で編集でき、`sentences[].breaks` としてサーバーに永続化される（`/api/articles/breaks`）。
 
 ## 制約・非対応
 
@@ -202,10 +233,14 @@ Notion側で対象の親ページ（および子記事）にインテグレー�
 各項目の「判定」列を **移植 / 廃止 / 変更** のいずれかで埋める。
 **すべての行が埋まるまで実装完了とみなさない。** 家族版の受け入れ基準はこの表である。
 
+> 例外が2つ。① **§6 のAPI表だけは「判定」ではなく「移行後」列**（移行先の実現手段：Supabase SDK / Edge Function / 廃止 / 対象外）を使う。② **記事モードは家族版に移植しない**ため、§1 は「自分の文」側のみを棚卸しし、記事モードのUIは対象外とする。
+
 > 以下の節番号（§1〜§12）は他文書から参照されている。**番号を変えないこと。**
 
 ---
 ## 1. 画面・UI要素
+
+> **本節は「自分の文」側とプレイヤーのみを対象とする。** 記事モードのUI（記事一覧・記事本文・長押しFailメニュー・「✅ 勉強完了」・「⬆️ Notion」・記事側の区切り編集）は**家族版に移植しないため棚卸し対象外**。仕様は第II部、APIは §6 を参照。
 
 ### 1.1 ヘッダ
 
@@ -213,7 +248,7 @@ Notion側で対象の親ページ（および子記事）にインテグレー�
 |---|---|---|---|
 | 1 | バージョン表示 | `/api/health` の `version` を `#ver` に表示 | **廃止** |
 | 2 | ステータス表示 | Ollama ✅/❌ ＋ 保存先（Drive/ローカル）を2行 | **廃止**（クラウド化で意味を失う。代わりにログイン中ユーザー名を表示） |
-| 3 | 履歴/戻るトグル | `toggleView()`。URLは変化しない | 移植 |
+| 3 | ナビ3種＋サブタブ2種 | ナビ `showView('main'\|'articles'\|'record')`＝✍️自分の文／📰記事／📊記録。「自分の文」内は `setSub('compose'\|'history')`＝作成／履歴。**URLは変化しない** | 移植（記事は対象外） |
 | 4 | 再読込ボタン | `location.reload()` | 移植 |
 
 ### 1.2 メイン画面（作文）
@@ -232,7 +267,8 @@ Notion側で対象の親ページ（および子記事）にインテグレー�
 | 9 | 訳文の contenteditable 編集 | `#english`。入力のたびに `current.marked` を再計算 | 移植 |
 | 10 | ピンイン表示行 | `#pinyin`。編集中は **400msデバウンス**で再取得 | **変更**（クライアント側ライブラリで即時計算。デバウンス不要） |
 | 11 | 発音ボタン | `playerLoad()` | 移植 |
-| 12 | **「／区切り挿入」ボタン** | `selectionchange` で保持した `savedRange` の位置に ` / ` を挿入 | 移植 |
+| 12 | **「✂️ 区切り編集」** | `toggleMainBreakEdit()` → `#breakGrid` に格子UIを描画。文字（zh）／語（en）の**すき間をタップ**して区切る。開いた時点で `explicitBreaks = true`（§3.1） | 移植 |
+| 12b | ~~「／区切り挿入」ボタン~~ | `insertSlash()` / `savedRange` は**定義されているが呼び出し元が無い死にコード**。UIにボタンは存在しない | **廃止**（移植しない） |
 | 13 | 保存ボタン | 新規保存 / `current.pageId` があれば上書き | 移植 |
 | 14 | キーワード一覧 | チェックボックス＋語/ピンイン/意味＋個別🔊 | 移植 |
 | 15 | 単語一括登録 | チェック済みを順次POST。**未保存なら先に文を保存** | 移植 |
@@ -241,12 +277,12 @@ Notion側で対象の親ページ（および子記事）にインテグレー�
 
 | # | 機能 | 実装詳細 | 判定 |
 |---|---|---|---|
-| 16 | タブ3種 | 日付別 / 英文のみ / 単語のみ | 移植 |
+| 16 | タブ3種＋更新 | 日付別 / {文}のみ / 単語のみ。2つ目のラベルは `LABELS.sentTab` で言語により変化（en=英文のみ / zh=中国語のみ）。「更新」ボタンで `loadHistory()` | 移植 |
 | 17 | **検索フィルタ** | クライアント側substring（文=英文+日本語 / 単語=語+意味+例文） | 移植 |
 | 18 | 文テーブル | 日付・訳文(+ピンイン)+日本語・実施(回数/最終日)・fail(件数バッジ+ラベル別ボタン)・操作 | 移植 |
 | 19 | 単語テーブル | 日付・語(+ピンイン)+例文・意味・操作(🔊/🗑) | 移植 |
 | 20 | 日付別グルーピング | `created` の日付でdesc、「文N件」「単語N語」の小見出し | 移植 |
-| 21 | **fail記録ボタン** | `config.json` の `fail_labels[]` から動的生成 | **変更**（設定の置き場をDBかクライアント定数へ。§6参照） |
+| 21 | **fail記録ボタン** | `config.json` の `fail_labels[]` から動的生成 | **変更**（クライアント側の定数へ。§6「`fail_labels` の移行先」で決定済み） |
 | 22 | 削除（文・単語） | confirm → API → 再読込 | 移植 |
 | 23 | **再学習（🔊 study）** | 下記 §2 に詳述。**最も複雑な導線** | **変更**（キーワード再抽出の扱い。§2.2） |
 
@@ -256,13 +292,14 @@ Notion側で対象の親ページ（および子記事）にインテグレー�
 |---|---|---|---|
 | 24 | 固定下部バー | 初期 `display:none`。表示時に body の `paddingBottom` を自動調整 | 移植 |
 | 25 | 節チップ | クリックで単発再生。`active`/`done`/通常 の3状態。`scrollIntoView({block:"nearest"})` で追従 | 移植 |
-| 26 | zhチップ下のピンイン | `/api/pinyin` にバッチ送信して差し込み | **変更**（クライアント側で計算） |
+| 26 | zhチップ下のピンイン | `/api/pinyin` にバッチ送信して差し込み | **変更**（拼音はクライアント側で計算。ただし `words[]`＝jieba分かち書きの取得は §7 #43.5 の代替が入るまで残る。§3.3） |
 | 27 | 速度スライダ | 0.4〜1.5 / step 0.05 / 既定0.9。**localStorage `speechRate` に永続** | **変更**（`profiles.default_rate` へ。§4） |
 | 28 | 速度プリセット3種 | ゆっくり0.6 / ふつう0.9 / 速い1.2。**押下で試聴サンプルを再生** | 移植 |
 | 29 | 再生/一時停止/再開/もう一度 | ボタン文言が状態で3通りに変化 | 移植 |
 | 30 | 最初から | `idx=0` にして再生 | 移植 |
 | 31 | **区切りモード選択** | normal/fine/sentence。**localStorage `splitMode` に永続。既定 `fine`** | **変更**（`profiles.default_split_mode` を追加。§4） |
 | 32 | 閉じる | 停止＋非表示＋padding解除 | 移植 |
+| 32b | 録音・発音評価 | `#btnRec`🎙録音 / `#btnPlayRec`▶自分 / `#btnPlayModel`▶お手本 / `#assessBox`。機能は **§6.5**、APIは **§6「発音評価・記録のAPI」** | 移植 |
 
 ---
 
@@ -270,15 +307,18 @@ Notion側で対象の親ページ（および子記事）にインテグレー�
 
 ### 2.1 再学習（study）の一連の流れ
 
-履歴の🔊をタップしたときの動作。**7つの副作用が連鎖する**ので、移植時に落としやすい。
+履歴の🔊をタップしたときの動作。**12の副作用が連鎖する**ので、移植時に落としやすい。
 
 ```
 study(id)
  1. sentCache[id] から文を取得（無ければ何もしない）
  2. メイン画面へ切替（showView("main")）
+ 2b. ★ 作成サブタブへ戻す（setSub("compose")）— これが無いと履歴表のまま画面が変わらない
  3. #ja に japanese を復元
  4. current = {japanese, english, marked, keywords:[], pageId:id}
     ★ pageId をセットすることで、以後の保存が「上書き」になる
+ 4b. ★ resetMainBreak() — 区切り編集モードを解除し explicitBreaks を再判定（§3.1）
+     ※ marked に「/」があれば true のまま残る（false にはならない）
  5. 結果カードを表示、#english に marked（区切り「/」込み）を復元
  6. 保存ボタンを disabled にし、「再学習中」メッセージを表示
  7. 画面を smooth scroll で最上部へ
@@ -305,42 +345,66 @@ study(id)
 
 **この規則が本アプリの中核。1行でも落とすと発音の区切りが変わる。**
 
-### 3.1 手動区切り（最優先）
+### 3.1 手動区切りと `explicitBreaks`
 
 ```js
 text.split(/[/|｜／]+/)
 ```
 
-**自動分割の「置き換え」ではなく「追加」。** 手動で区切った各セグメントに対し、さらに自動分割をかける。
+**`explicitBreaks` フラグで挙動が2分岐する。ここを落とすと区切りが変わる。**
+
+| `explicitBreaks` | 挙動 |
+|---|---|
+| `true` | **手動区切りのみを使う。自動分割を一切足さない** |
+| `false` | 手動区切りは自動区切りへの「追加」。各セグメントにさらに自動分割をかける |
+
+`true` になる契機は、① 訳文に `/` を手打ちした（`/[/|｜／]/` を検出）、② **「✂️ 区切り編集」を開いた**。
+
+`false` 側は**再判定型と直接代入型の2種**がある。
+
+| 型 | 呼ばれる場面 | 挙動 |
+|---|---|---|
+| **再判定** | 訳文の編集 `englishEdited()` / 言語切替 `setLang()` / 新規翻訳 `doTranslate()` / 再学習 `study()`（後3者は `resetMainBreak()` 経由） | **`false` を代入するのではなく `current.marked` に `/` があるかで再判定する**。→ `/` 入りの文を再学習すると **`true` のまま残る**。逆に編集で `/` を全部消すと `false` に戻る |
+| **直接代入** | 記事を開く `openArticle()` / 記事の句を再生 `playArtSentence()` | `explicitBreaks = false` |
 
 ### 3.2 英語 `autoSplit(text, mode)`
 
-| モード | 語数上限 | 規則 |
-|---|---|---|
-| `sentence` | — | `/[^.!?]+[.!?]*/g` で文単位に分割 |
-| `normal` | **8** | ① `/[^,;:.!?]+[,;:.!?]*/g` で分割 → ② 語数が8超なら**接続詞の前**で分割 |
-| `fine` | **4** | ①② に加え → ③ なお4語超なら**前置詞の前**でも分割 |
+**語数による閾値判定は存在しない。** 接続詞/前置詞を分けたリストも存在せず、`ENG_BREAK` という単一の正規表現で処理する。
 
-**接続詞リスト（CONJ）** — 正規表現は `\s+(?=(?:…)\b)` の先読み、`i` フラグ付き
+| モード | 規則 |
+|---|---|
+| `sentence` | `/[^.!?]+[.!?]*/g` で文単位に分割 |
+| `normal` | `/[^,;:.!?]+[,;:.!?]*/g` の**句読点分割のみ**（接続詞分割はしない） |
+| `fine` | 句読点分割の各節に `ENG_BREAK` を**無条件適用** |
 
+```js
+const ENG_BREAK = /\s+(?=(?:and|but|or|nor|so|yet|because|although|though|while|when|whenever|whereas|if|unless|until|since|that|which|who|whose|whom|where|after|before|to|in|on|at|with|for|from|of|about|into|onto|over|under|through|during|between|among|against|without|within)\b)/i;
 ```
-and, but, or, so, because, when, while, that, which, who, whose,
-where, after, before, if, although, though, until, unless, since, as
-```
 
-**前置詞リスト（PREP）** — fine モードのみ使用
+**★ 後処理2つ（移植時に落とすと区切りが変わる）**
 
-```
-to, in, on, at, with, for, from, about, into, over, under,
-around, through, during, near, behind, between
+```js
+// ① 1語だけの断片は前のグループに結合（"I / love" のような分断を防ぐ）
+if (merged.length && p.split(/\s+/).length <= 1) merged[merged.length - 1] += " " + p;
+else merged.push(p);
+// ② 先頭が1語だけの孤立なら次に結合
+if (merged.length > 1 && merged[0].split(/\s+/).length <= 1)
+  merged.splice(0, 2, merged[0] + " " + merged[1]);
 ```
 
 ### 3.3 中国語 `zhSplit(text, mode)`
 
-| モード | 区切り文字 |
+**モードによって分割の粒度が異なる。`fine` は jieba による単語分割を使う。**
+
+| モード | 規則 |
 |---|---|
-| `sentence` | `。！？` |
-| `normal` / `fine` | `，。！？、；：` （**モード差なし**） |
+| `sentence` | `/[^。！？]+[。！？]*/g` |
+| `normal` | `/[^，。！？、；：]+[，。！？、；：]*/g`（句読点＝節レベル） |
+| `fine` | **jieba の単語分割**（词レベル）。句読点トークンは直前の語に結合する |
+
+`fine` が使う単語列は `/api/pinyin` のレスポンス `words[]`（サーバー側 jieba）を `zhWordsMap`（clean中文 → 単語配列）にキャッシュしたもの。`playerLoad()` と `toggleMainBreakEdit()` が事前に取得する。**未取得のときは `normal` と同じ句読点分割にフォールバックする。**
+
+> **移植上の含意:** クライアント完結にするには pypinyin 相当だけでなく**分かち書きの代替も必要**（§7 #43.5 参照）。
 
 ---
 
@@ -355,8 +419,11 @@ around, through, during, near, behind, between
 | `sentCache` | `{id → 文オブジェクト}`。study の復元に必須 |
 | `lang` | `'en'` / `'zh'` |
 | `player` | `{text, phrases[], idx, playing, gen}` |
-| `savedRange` | 区切り挿入用に保持したカーソル位置 |
-| `view` | `'main'` / `'history'` |
+| `savedRange` | 区切り挿入用に保持したカーソル位置。読み手の `insertSlash()` が死んでいるため**値は使われない**が、**`selectionchange` リスナーは常時動いて書き込み続けている**（§1.3 #12b・§11.4。落とすときはリスナーごと） |
+| `view` | `'main'` / `'articles'` / `'record'` |
+| `sub` | `'compose'` / `'history'`（「自分の文」内のサブタブ） |
+| `explicitBreaks` | 手動区切りのみを使うか（§3.1）。**移植必須** |
+| `zhWordsMap` | clean中文 → jieba単語配列のキャッシュ（§3.3）。**移植必須** |
 | `allS`, `allW`, `histTab` | 履歴の全件データとタブ状態 |
 | `pinyinTimer` | ピンイン再取得のデバウンス用 |
 
@@ -419,18 +486,40 @@ const speakNext = () => {
 
 | メソッド / パス | 入力 | 出力 | 移行後 |
 |---|---|---|---|
-| `GET /api/health` | — | version, ollama_ok, models[], storage_*, **fail_labels[]**<br>※副作用: config再読込・warm_up | **廃止** |
+| `GET /api/health` | — | version, ollama_ok, ollama_error, models[], default_model, storage_*, drive_ready/error, notion_ready, azure_ready, **fail_labels[]**, **article_fail_labels[]**<br>※副作用: config再読込・warm_up | **廃止** |
 | `GET /api/sentences?lang=` | lang | 直近200件（新しい順）<br>id/english/japanese/marked/pinyin/created(日付10桁)/fail_count/practice_count/last_practiced | Supabase SDK |
 | `GET /api/words?lang=` | lang | 直近500件<br>id/word/meaning/example(空なら出典文)/pinyin/created | Supabase SDK |
 | `POST /api/translate` | japanese, model?, lang | `{english, pinyin?}` | **Edge Function** |
 | `POST /api/keywords` | english, japanese, model?, lang | `{keywords: [{word, meaning, pinyin?}]}` 最大3件 | **Edge Function** |
-| `POST /api/pinyin` | texts[] | `{pinyins[]}` | **廃止**（クライアント処理） |
+| `POST /api/pinyin` | texts[] | `{pinyins[], pairs[], words[]}`<br>`pairs`=[文字,拼音]の列 / **`words`=jieba分かち書き**（§3.3が依存） | **変更**（クライアント処理にするなら分かち書きの代替が要る） |
 | `POST /api/sentences` | japanese, english, marked, memo?, lang, **id?** | `{id}` / `{id, updated:true}` | Supabase SDK |
 | `POST /api/words` | word, meaning, example, source_id, lang | `{id}` | Supabase SDK |
 | `POST /api/words/delete` | id | `{deleted}` | Supabase SDK |
 | `POST /api/fail` | id, label | `{fail_count}` | Supabase SDK |
 | `POST /api/practice` | id | `{practice_count, last_practiced}` | Supabase SDK |
 | `POST /api/delete` | id | `{deleted}` | Supabase SDK |
+
+### 発音評価・記録のAPI（機能一覧は §6.5）
+
+| メソッド / パス | 入力 | 出力 | 移行後 |
+|---|---|---|---|
+| `POST /api/assess` | **生の音声バイトをbody**、`lang`/`text`/`source` はクエリ文字列、形式は `X-Audio-Type` ヘッダ<br>※他のAPIと異なり JSON body ではない。`source` はクライアント未送信 | `{ok, recognized, scores, words[], heard_text}`<br>※`heard_text` は**zhのみ**（参照なし認識の結果）。`recognized` は参照あり認識のDisplay文字列で**クライアント未使用**。2つは別物なので取り違えないこと | **Edge Function**（Azureプロキシ） |
+| `GET /api/assessments` | `lang`, `mode=weak\|history` | 苦手語集計（直近30日）／評価履歴 | Supabase SDK |
+| `POST /api/assessments/clear` | lang | `{deleted}` | Supabase SDK |
+
+### 記事モードのAPI（第II部）
+
+> **POSTの記事IDのキーは `id` ではなく `article_id`。** クエリで受ける `GET /api/article?id=` だけが `id`。
+
+| メソッド / パス | 入力 | 出力 | 移行後 |
+|---|---|---|---|
+| `GET /api/articles` | — | 記事一覧（最終学習日・学習回数・Nomiss率・未反映Fail数） | **対象外** |
+| `GET /api/article` | `id`（クエリ） | 記事1件（sentences/vocab/fails/sessions） | **対象外** |
+| `POST /api/articles/refresh` | limit（**サーバー既定4**／クライアントは3を送る） | 未取り込みのNotion記事を取り込む | **対象外** |
+| `POST /api/articles/fail` / `/unfail` | article_id, idx, ci, **char, syllable**, label | Fail の付与・解除 | **対象外** |
+| `POST /api/articles/breaks` | article_id, idx, breaks[] | 節区切りの永続化 | **対象外** |
+| `POST /api/articles/session` | article_id | 勉強完了。`{date, misses, total, nomiss}` | **対象外** |
+| `POST /api/articles/push` | article_id | 失敗履歴テーブルをNotionへ書き戻し | **対象外** |
 
 ### `fail_labels` の移行先
 
@@ -441,6 +530,8 @@ const speakNext = () => {
 ---
 
 ## 6.5 発音評価・記録（★2026-07-26 追記。当初の棚卸しから漏れていた）
+
+> **項番は §7 の続き #45〜53。** 追記のため、節の位置（§6 と §7 の間）と項番の順序が前後している。
 
 本棚卸しは発音評価機能（v1.27〜v1.37）の実装前に作成されたため、以下が欠落していた。
 **いずれも本アプリの中核機能であり、家族版に含める。**
@@ -469,7 +560,7 @@ const speakNext = () => {
 |---|---|---|---|
 | 33 | 言語別ファイル分割 | `sentences.json` / `sentences_zh.json` / `words.json` / `words_zh.json` | **廃止**（`lang` 列に統合） |
 | 34 | **Markdown自動生成** | 書き込みのたびに4本の `.md` を再生成（実施日一覧・fail一覧・メモを含む） | **変更**（オンデマンドのエクスポート機能へ） |
-| 35 | Drive push/pull | 8ファイルを非同期アップロード（直列化）、起動時にpull | **廃止** |
+| 35 | Drive push/pull | push=**10ファイル**を非同期アップロード（直列化）。起動時のpullは**5ファイル**（`sentences*.json`/`words*.json`/`articles_zh.json`）で、**`assessments.json` はpull対象外**（§11.3） | **廃止** |
 | 36 | `migrate_ids()` | 起動時にID欠落レコードへUUID付与 | **廃止**（移行スクリプトで吸収） |
 | 37 | `warm_up()` | 起動時・health時にOllamaへダミー投げ | **廃止** |
 | 38 | 排他制御 | グローバル`LOCK` ＋ `.tmp`→`os.replace` の原子的書き込み | **廃止**（Postgresが担う） |
@@ -478,6 +569,7 @@ const speakNext = () => {
 | 41 | キーワードのJSON修復 | `json_mode` 失敗時に `/\{.*\}/s` で抽出 | 移植（構造化出力を使っても保険として） |
 | 42 | **word/meaning 入替補正** | §7.1 参照 | **移植（重要）** |
 | 43 | ピンイン | `pypinyin.lazy_pinyin(style=TONE)`。未導入なら自動 pip install | **変更**（JSライブラリへ） |
+| 43.5 | **jieba 分かち書き** | `segment_zh()`。未導入なら自動 pip install。`/api/pinyin` の `words[]` として返し、**中国語の `fine` 分割が依存**（§3.3） | **変更**（クライアント側に代替が必要。落とすと `fine` が句読点分割に退化する） |
 | 44 | Ollama設定 | temperature 0.3 / stream false / keep_alive 24h | **変更**（temperature 0.3 は維持） |
 
 ### 7.1 word/meaning 入替補正（移植必須）
@@ -535,8 +627,9 @@ Rules:
 Respond ONLY with JSON: {"keywords": [{"word": "...", "meaning": "..."}]}
 ```
 
-呼び出し時に以下を付加：
+呼び出し時に以下を付加（**プロンプト本文の直後に空行が1行入る**。本文が `\n` で終わり、さらに `\n{label} sentence:` を連結するため）：
 ```
+
 {English|Chinese} sentence:
 {english}
 
@@ -556,13 +649,13 @@ Original Japanese text:
 |---|---|---|
 | `name` | 英語 | 中国語 |
 | `toBtn` | 英語にする | 中国語にする |
-| `transHead` | 英訳（タップで編集可…） | 中国語訳（タップで編集可…） |
+| `transHead` | 英訳 ✏️ | 中国語訳 ✏️ |
 | `sentTab` | 英文のみ | 中国語のみ |
 | `sentCol` | 英文 / 日本語 | 中国語 / 日本語 |
 | `unit` | 英文 | 文 |
 | `delConfirm` | この英文を削除しますか？ | この文を削除しますか？ |
 | `restudy` | 保存済みの英文を再学習中（…上書きされます） | 保存済みの文を再学習中（…） |
-| `slashHint` | 区切りたい位置を英文内でタップしてから押してください | 区切りたい位置を文中で… |
+| ~~`slashHint`~~ | ~~区切りたい位置を英文内でタップしてから押してください~~ | ~~区切りたい位置を文中で…~~<br>**死にコード。§11.4 — 移植しない** |
 | `sample` | This is the speaking speed. | 这是朗读的速度。 |
 | `ttsLang` | en-US | zh-CN |
 | `voicePref` | en | zh |
@@ -614,9 +707,22 @@ def record_fail(sentence_id, label="Fail"):
 
 ### 11.2 study のたびにキーワード再抽出（§2.2 で対処済み）
 
+### 11.3 `assessments.json` が Drive から復元されない
+
+`assessments.json` は push 対象（10ファイル）に入っているが、起動時の pull 対象（5ファイル）に入っていない。
+**ローカルの `data/` を失うと、発音評価の履歴と苦手語の集計だけ復元されない。**
+
+移行後はPostgresが単一の保管場所になるため自然に解消する。**移行前にローカル `data/` を消さないこと。**
+
+### 11.4 死にコード：`insertSlash()` / `savedRange` / `LABELS.slashHint`
+
+「／区切り挿入」ボタンは「✂️ 区切り編集」に置き換えられたが、**関数・状態・UIラベルが残っている**（`insertSlash()` に呼び出し元なし）。移植しない。
+
+ただし `savedRange` に書き込む **`selectionchange` リスナーは常時動いている**（読み手が居ないだけ）。削除するときはリスナーも一緒に落とすこと。
+
 ---
 
-## 12. 廃止するもの一覧
+## 12. 廃止・対象外とするもの一覧
 
 | 対象 | 理由 |
 |---|---|
@@ -624,7 +730,9 @@ def record_fail(sentence_id, label="Fail"):
 | Google Drive / GAS 連携（`google_drive.py`, `drive_auth.py`, `gas/Code.gs`） | Postgresへ移行 |
 | Tailscale 前提の運用 | 公開HTTPSへ |
 | `config.json` / `config.example.json` | 環境変数へ |
+| **記事モード一式**（`notion_client.py`, `tools_import_fails.py`, `/api/articles/*`, 記事UI） | **家族版では対象外**（第II部）。現行アプリでのみ使い続ける |
 | `setup.sh`（launchd登録） | 不要 |
+| `enable_https.sh` / 自己署名証明書 | ホスティング側のHTTPSに置換 |
 | `/api/health`, `warm_up()`, `migrate_ids()`, `list_models()` | 不要 |
 | ローカル `data/` ディレクトリと排他制御 | Postgresが担う |
 
