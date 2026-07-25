@@ -7,7 +7,8 @@ family/
 ├── supabase/
 │   ├── migrations/
 │   │   ├── 20260726000001_init.sql          … 7テーブル・RLS・トリガー
-│   │   └── 20260726000002_assessments.sql   … 発音評価の記録（★流し忘れ注意）
+│   │   ├── 20260726000002_assessments.sql   … 発音評価の記録（★流し忘れ注意）
+│   │   └── 20260726000003_usage_units.sql   … 課金単位（audio_seconds / calls）
 │   └── functions/
 │       ├── _shared/common.ts                … JWT検証・クォータ・Gemini・usage_logs
 │       ├── translate/index.ts               … 翻訳（小学生ペルソナのプロンプト移植）
@@ -29,10 +30,12 @@ family/
 
 1. [supabase.com](https://supabase.com) で新規プロジェクト（**リージョン Tokyo / Free**）
 2. **Authentication → Providers → Email → "Enable email signup" を OFF**（第三者の登録を防ぐ）
-3. SQL Editor でマイグレーションを**2本とも**実行する（順番どおり）
+3. SQL Editor でマイグレーションを**3本とも**実行する（順番どおり）
    1. `supabase/migrations/20260726000001_init.sql`
    2. `supabase/migrations/20260726000002_assessments.sql`
+   3. `supabase/migrations/20260726000003_usage_units.sql`
    ★ 2本目を忘れると `assessments` が無く、**発音評価と📊記録タブが動かない**
+   ★ 3本目を忘れると **発音評価の原価が測れない**（GO/NO-GO 条件Cの判定材料が取れない）
 4. Authentication → Users → **Add user** で家族分を手動作成（`email_confirm` をON）
    - 娘のアカウントは親のエイリアス（`you+daughter@example.com`）でよい
 
@@ -51,6 +54,7 @@ supabase secrets set MAX_INPUT_CHARS=300
 # 発音評価（現行アプリの config.json の azure と同じ値）
 supabase secrets set AZURE_SPEECH_KEY=xxxxx
 supabase secrets set AZURE_SPEECH_REGION=japaneast
+supabase secrets set AZURE_SPEECH_TIER=f0        # 無料枠。S0にしたら s0 に変える
 
 supabase functions deploy translate
 supabase functions deploy keywords
@@ -59,6 +63,10 @@ supabase functions deploy assess
 
 Gemini APIキーは [Google AI Studio](https://aistudio.google.com/apikey) で取得。
 Azureのキーは現行の `config.json` の `azure.key` / `azure.region` をそのまま使える。
+
+> **Azure は F0（無料枠）で運用する。** 月5時間・**同時リクエスト1件**（調整不可）。
+> 家族が同時に録音すると429になるため、Edge Function 側で2回まで再試行する。
+> 中国語は1回の評価で2回呼ぶので消費は2倍（実質2.5時間ぶん）。
 
 ### 3. クライアント設定
 
@@ -127,4 +135,5 @@ GitHub リポジトリの Secrets に `SUPABASE_URL` と `SUPABASE_ANON_KEY` を
 - [ ] 中国語の区切り「細かめ」が**词（単語）単位**になっている（1文字ずつではない）
 - [ ] 深夜（JST 0〜9時）に保存した文の日付が**その日**になっている
 - [ ] `usage_logs` にトークン数が記録されている
+- [ ] `usage_logs` の `kind='assess'` の行に **`audio_seconds` と `calls` が入っている**（0のままなら原価が測れない）
 - [ ] クライアントのバンドルにAPIキーが含まれていない

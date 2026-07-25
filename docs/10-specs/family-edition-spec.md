@@ -354,9 +354,11 @@ create table usage_logs (
   id bigserial primary key,
   user_id uuid references auth.users on delete cascade,
   kind text not null,            -- 'translate' | 'keywords' | 'assess'
-  model text not null,
+  model text not null,           -- 実際に呼んだサービス（gemini-2.5-flash-lite / azure-speech-f0）
   input_tokens int not null default 0,
   output_tokens int not null default 0,
+  audio_seconds numeric not null default 0,  -- ★Azureの課金単位（秒）
+  calls int not null default 1,              -- ★外部API呼び出し回数（zhの発音評価は2）
   created_at timestamptz not null default now()
 );
 create index on usage_logs (user_id, created_at desc);
@@ -377,9 +379,10 @@ create table assessments (
 create index on assessments (user_id, lang, created_at desc);
 ```
 
-> **`usage_logs` は Gemini のトークン数を前提にした列構成**（`input_tokens` / `output_tokens`）。
-> **Azure の発音評価は音声の長さで課金されるため、この2列では原価換算できない**（`kind='assess'` の行は常に0になる）。
-> 原価の実測に使うなら `audio_seconds` 等の列が要る。→ `../20-plans/family-evaluation-plan.md` の集計SQLと合わせて要検討。
+> **課金単位はサービスごとに違う。** Gemini はトークン数、**Azure は音声の長さ**で課金される。
+> `input_tokens` / `output_tokens` だけでは `kind='assess'` の原価が測れない（常に0になる）ため、
+> **`audio_seconds` と `calls` を持たせている**。GO/NO-GO 条件Cの判定に必要。
+> 集計方法は `../20-plans/family-evaluation-plan.md` §3 を参照。
 
 ### 5.2 RLSポリシー
 
@@ -540,7 +543,41 @@ create policy "own read" on usage_logs    for select using (auth.uid() = user_id
 > **WAVで送ることが必須**。webm/opus のまま送ると Azure 側で時間軸が壊れ（5秒→1.16秒と解釈）、
 > なめらかさ10点・読めた割合50%といった誤判定になる（実測で確認済み）。
 
-**環境変数**：`AZURE_SPEECH_KEY` / `AZURE_SPEECH_REGION`
+**環境変数**：`AZURE_SPEECH_KEY` / `AZURE_SPEECH_REGION` / `AZURE_SPEECH_TIER`（`f0` | `s0`。既定 `f0`）
+
+#### F0（無料枠）で運用する — 2026-07-26 決定
+
+| 制約 | 値 | 家族版での意味 |
+|---|---|---|
+| 月間の音声時間 | **5時間**（Speech-to-Text 全体で共有。発音評価に専用枠は無い） | 1回10秒として月1,800回。3人なら十分 |
+| **同時リクエスト** | **1件（調整不可）** | **家族が同時に録音すると 429 が返る** |
+| 超過時 | 403 | 翌月まで使えない |
+
+**中国語は1回の評価で Azure を2回呼ぶ**（採点＋参照なし認識）ため、**無料枠の消費は2倍**になる。
+
+**月5時間（18,000秒）で何回使えるか**
+
+| 1回の録音 | 英語（1回呼び） | 中国語（2回呼び） |
+|---|---|---|
+| 5秒 | 3,600回 | 1,800回 |
+| 10秒 | 1,800回 | 900回 |
+| 30秒 | 600回 | 300回 |
+
+**家族3人なら十分に余裕がある。** ただし娘の利用が増えると中国語側から先に効いてくるので、
+評価期間中は使用率（`pct_of_free_quota`）を月次で見る（`../20-plans/family-evaluation-plan.md` §3）。
+
+**429（同時実行）への対応**
+
+- Edge Function 側で **700ms → 1,800ms の間隔で2回まで再試行**する（`AZURE_SPEECH_TIER=f0` のとき）
+- それでも通らなければ「いま混み合っています。少し待ってからもう一度どうぞ」を返す（**429**）
+- 403（枠切れ）は「今月の無料枠を使い切りました（翌月に戻ります）」を返す（**402**）
+
+> **S0（従量）へ切り替えるなら** `AZURE_SPEECH_TIER=s0` にする。同時実行が100件になり、再試行の間隔も短くなる。
+
+**原価の記録**
+
+`usage_logs` に `model='azure-speech-f0'`、`audio_seconds`（**中国語は2倍で計上**）、`calls`（zh は2）を残す。
+**トークン列では測れない**ため、この3つが GO/NO-GO 条件Cの唯一の判定材料になる。
 
 ## 7. クライアント実装方針
 
@@ -793,9 +830,9 @@ flowchart LR
 
 | 要素 | 理由 |
 |---|---|
-| `profiles` の `"family read"` RLSポリシー | **他人のプロフィールが見えてしまう。事業版では必ず削除**（`saas-diff-spec.md` §2.4） |
-
 | GitHub Actions の keepalive | Pro では一時停止しないため不要 |
+
+> `profiles` の `"family read"` ポリシーは**家族版で廃止済み**のため、事業版での削除作業は無い（`saas-diff-spec.md` §2.4）。
 
 ---
 

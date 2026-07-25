@@ -179,7 +179,17 @@ async function sendAssess(wav, text, lang, ui) {
   fd.append("text", text);
   fd.append("lang", lang);
   const { data, error } = await sb.functions.invoke("assess", { body: fd });
-  if (error) { ui.showError(error.message || "判定できませんでした"); return; }
+  if (error) {
+    // Azure F0 は同時リクエスト1件。家族が同時に録音すると 429 が返る。
+    // サーバー側で2回まで再試行済みなので、ここまで来たら待ってもらう。
+    let msg = error.message || "判定できませんでした";
+    try {
+      const ctx = await error.context?.json?.();
+      if (ctx?.error) msg = ctx.error;
+    } catch { /* noop */ }
+    ui.showError(msg);
+    return;
+  }
   if (data?.ok === false) { ui.showError(data.error); return; }
   const d = data.data ?? data;
   if (lang === "zh" && d.heard) attachKinds(d.words, text, d.heard);

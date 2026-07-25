@@ -27,7 +27,7 @@
 | 学習日数・頻度 | `practices` / `assessments` の `occurred_at` | 週あたり何日使ったか |
 | 作文数 | `sentences` | 月150文の無料枠は妥当か |
 | **消費トークン** | `usage_logs.input_tokens / output_tokens` | **原価の裏取り（最重要）** |
-| **発音評価の利用量** | `usage_logs` の `kind='assess'` | ★**Azureは音声の秒数で課金される**。現在の列（トークン数）では測れないので、`audio_seconds` 列を**評価開始前に**追加すること |
+| **発音評価の利用量** | `usage_logs` の `audio_seconds` / `calls` | Azureは音声の秒数で課金。**F0無料枠は月5時間＝18,000秒**。使用率が何%か（超過したら翌月まで使えない） |
 | 発音スコアの推移 | `assessments.scores.pron` | 上達しているか＝商品価値の証拠 |
 | 苦手語の推移 | `assessments.words` | 弱点が減っているか |
 
@@ -45,13 +45,35 @@
 ## 3. 集計の手順（月1回）
 
 ```sql
--- 原価の実測（Gemini の従量課金の単価を掛けて円換算する）
-select kind, count(*) as calls,
+-- 原価の実測 ①LLM（Gemini はトークン課金）
+select kind, model, count(*) as rows,
        sum(input_tokens) as in_tok, sum(output_tokens) as out_tok,
        round(avg(input_tokens)) as avg_in, round(avg(output_tokens)) as avg_out
 from usage_logs
 where created_at >= now() - interval '30 days'
-group by kind;
+  and kind in ('translate', 'keywords')
+group by kind, model;
+
+-- 原価の実測 ②発音評価（Azure は【音声の長さ】で課金。トークン列では測れない）
+--   ★ F0 無料枠は月5時間 = 18,000秒。中国語は1回で2回呼ぶため2倍で計上済み。
+select date_trunc('month', created_at) as month,
+       count(*)                as assessments,
+       sum(calls)              as azure_calls,
+       round(sum(audio_seconds))            as total_seconds,
+       round(sum(audio_seconds) / 3600.0, 2) as hours,
+       round(100 * sum(audio_seconds) / 18000.0, 1) as pct_of_free_quota,
+       round(avg(audio_seconds), 1)         as avg_seconds
+from usage_logs
+where kind = 'assess'
+group by 1 order by 1 desc;
+
+-- 1人あたり月いくらか（条件Cの判定用）
+select user_id,
+       round(sum(audio_seconds))             as assess_seconds,
+       sum(input_tokens + output_tokens)     as llm_tokens
+from usage_logs
+where created_at >= now() - interval '30 days'
+group by user_id;
 
 -- 利用頻度（ユーザー別・日別）
 select user_id, date(occurred_at) as d, count(*) as n
@@ -85,6 +107,8 @@ group by 1, 2 order by 1;
 | 娘が使っていない | **理由を聞く。** UXの問題なら直す（実装凍結の例外） |
 | 原価が想定の3倍以上 | プロンプト・モデルを見直す |
 | Free枠を圧迫している | 使用量の内訳を確認 |
+| **Azure F0 の月5時間に迫っている**（使用率70%超） | 娘の利用が増えている良い兆候。S0への切替を検討する（`AZURE_SPEECH_TIER=s0`） |
+| **429（同時実行）が頻発** | F0は同時1件。使う時間帯をずらすか S0 へ |
 | 障害が頻発している | 原因を潰す |
 
 ---

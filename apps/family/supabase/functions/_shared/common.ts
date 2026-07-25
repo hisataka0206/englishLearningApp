@@ -58,15 +58,25 @@ export async function checkQuota(sb: SupabaseClient, userId: string, _kind: stri
   return { allowed: true, plan };  // 事業版でここを実装
 }
 
-/** 使用量の記録と最終利用日の更新（失敗しても本処理は止めない） */
+/** 使用量の記録と最終利用日の更新（失敗しても本処理は止めない）
+ *
+ *  ★ 課金単位はサービスごとに違う。トークン数だけでは Azure の原価が測れないため、
+ *    model / audio_seconds / calls を呼び出し側から渡せるようにしている。
+ *    ここを埋めないと GO/NO-GO 条件C（原価が想定内か）を判定できない。
+ */
 export async function logUsage(
-  sb: SupabaseClient, userId: string, kind: string, usage: Record<string, number> | undefined,
+  sb: SupabaseClient, userId: string, kind: string,
+  usage: Record<string, number> | undefined,
+  extra?: { model?: string; audioSeconds?: number; calls?: number },
 ) {
   try {
     await sb.from("usage_logs").insert({
-      user_id: userId, kind, model: MODEL,
+      user_id: userId, kind,
+      model: extra?.model ?? MODEL,
       input_tokens: usage?.promptTokenCount ?? 0,
       output_tokens: usage?.candidatesTokenCount ?? 0,
+      audio_seconds: extra?.audioSeconds ?? 0,
+      calls: extra?.calls ?? 1,
     });
     await sb.from("profiles").update({ last_active_at: new Date().toISOString() })
       .eq("id", userId);
