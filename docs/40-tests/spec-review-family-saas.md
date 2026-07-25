@@ -103,7 +103,7 @@
 | ~~7~~ | ~~`logUsage` が Azure でも `model='gemini-...'`・トークン0 で記録~~ | **対応済み**（2026-07-26）。`audio_seconds` / `calls` 列を追加し、`model='azure-speech-f0'` を記録。F0の429再試行も実装 |
 | 8 | R/V/T/N 分類のアライメントが、欠落まで「置換」として分類 | 現行 `error_kind.py` は `tag != "replace"` で除外。集計にノイズが乗る |
 | 9 | 移行スクリプトの fails/practices が**冪等でない** | 2回流すと実施回数が倍になる |
-| 10 | `vercel.json`・PWAアイコンが未作成 | デプロイ手順の一部 |
+| ~~10~~ | ~~`vercel.json`・PWAアイコンが未作成~~ | **対応済み**（2026-07-26）。`vercel.json`・仮アイコン3種を同梱し、`apple-touch-icon` を index.html に追加 |
 | 11 | `sentences.memo` 列が実装で未使用 | 現行のメモ機能を落とすなら列も削るか、仕様に「廃止」と書く |
 | 12 | 定期バックアップ（`pg_dump`）が未実装 | `../00-business/exit-plan.md` §3 が「Phase 1 で入れる」と書いているが実装にない。**Supabase Free にバックアップは無い** |
 

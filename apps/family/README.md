@@ -8,15 +8,17 @@ family/
 │   ├── migrations/
 │   │   ├── 20260726000001_init.sql          … 7テーブル・RLS・トリガー
 │   │   ├── 20260726000002_assessments.sql   … 発音評価の記録（★流し忘れ注意）
-│   │   └── 20260726000003_usage_units.sql   … 課金単位（audio_seconds / calls）
+│   │   └── 20260726000003_usage_units.sql   … 課金単位（audio_seconds / calls）＋ keepalive用 ping()
 │   └── functions/
 │       ├── _shared/common.ts                … JWT検証・クォータ・Gemini・usage_logs
 │       ├── translate/index.ts               … 翻訳（小学生ペルソナのプロンプト移植）
 │       ├── keywords/index.ts                … 語彙抽出（word/meaning入替補正つき）
 │       └── assess/index.ts                  … 発音評価（Azure Speech のプロキシ）
 ├── web/                                     … クライアント（素のJS・Vercelに配置）
-│   ├── index.html / app.js / data-api.js / assess.js / config.js / manifest.json
-├── scripts/migrate_to_supabase.py           … 既存JSONの移行（冪等）
+│   ├── index.html / app.js / data-api.js / assess.js / config.js
+│   ├── manifest.json / vercel.json          … PWA / SPAルーティング
+│   └── icon-192.png / icon-512.png / apple-touch-icon.png   … 差し替え可の仮アイコン
+├── scripts/migrate_to_supabase.py           … 既存JSONの移行（★fails/practicesは冪等でない）
 
 （keepalive のワークフローは **リポジトリルートの `.github/workflows/keepalive.yml`**。
 　GitHub Actions はルートの `.github/` しか読まないため、ここには置けない）
@@ -35,7 +37,7 @@ family/
    2. `supabase/migrations/20260726000002_assessments.sql`
    3. `supabase/migrations/20260726000003_usage_units.sql`
    ★ 2本目を忘れると `assessments` が無く、**発音評価と📊記録タブが動かない**
-   ★ 3本目を忘れると **発音評価の原価が測れない**（GO/NO-GO 条件Cの判定材料が取れない）
+   ★ 3本目を忘れると **発音評価の原価が測れない**（GO/NO-GO 条件Cの判定材料が取れない）＋ **keepalive が落ちる**（`public.ping()` が無いため）
 4. Authentication → Users → **Add user** で家族分を手動作成（`email_confirm` をON）
    - 娘のアカウントは親のエイリアス（`you+daughter@example.com`）でよい
 
@@ -95,17 +97,28 @@ python3 migrate_to_supabase.py --data ../../local/data
 
 ### 5. デプロイ（Vercel Hobby）
 
-`web/` をルートとして配置する。SPAのルーティングのため、`vercel.json` に以下を置く。
+**`web/` をプロジェクトのルートディレクトリとして配置する。** 必要なファイルは同梱済み。
 
-```json
-{ "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }] }
-```
+| ファイル | 役割 |
+|---|---|
+| `vercel.json` | SPAのルーティング（`/history` などを直接開いても404にしない） |
+| `manifest.json` | PWA |
+| `icon-192.png` / `icon-512.png` / `apple-touch-icon.png` | ホーム画面のアイコン。**仮のもの**なので好きな絵に差し替えてよい（同名・同サイズで置くだけ） |
 
-アイコン（`icon-192.png` / `icon-512.png`）を `web/` に置くとPWAとしてホーム画面に追加できる。
+> iOS はホーム画面追加時に manifest の `icons` を見ないため、`apple-touch-icon.png` が別に要る（`index.html` で参照済み）。
 
 ### 6. keepalive
 
-GitHub リポジトリの Secrets に `SUPABASE_URL` と `SUPABASE_ANON_KEY` を登録する。
+1. GitHub リポジトリの Secrets に `SUPABASE_URL` と `SUPABASE_ANON_KEY` を登録する
+2. **Actions タブから `keepalive` を手動実行（Run workflow）して、緑になることを確認する**
+
+> ワークフローは**リポジトリルートの `.github/workflows/keepalive.yml`**（GitHub Actions はルートしか読まない）。
+> DBに必ず到達させるため `public.ping()` を呼ぶ（migration 3本目で作成）。
+> テーブルを直接読む方式だと、RLSポリシーを変えたときに黙って壊れるため。
+
+### 7. 動作確認
+
+下の「受け入れ確認」を実機（iPhone）で1つずつ確認する。
 
 ---
 
@@ -116,13 +129,26 @@ GitHub リポジトリの Secrets に `SUPABASE_URL` と `SUPABASE_ANON_KEY` を
 | 保存先 | ローカルJSON + Google Drive | Supabase Postgres（RLSで個人別） |
 | 翻訳 | ローカルLLM（Ollama） | Gemini（Edge Function経由） |
 | ピンイン | サーバーで pypinyin | **クライアントで pinyin-pro**（原価ゼロ・即時） |
+| 分かち書き（中国語の区切り） | サーバーで jieba | **クライアントで `pinyin-pro` の `segment()`**（词レベル。同等） |
 | 発音 | Web Speech API | 同じ（変更なし） |
 | 認証 | なし | メール＋パスワード（サインアップ無効） |
 | Mac | 起動が必須 | **不要** |
 | 発音評価 | Mac常駐サーバーがAzureを呼ぶ | **Edge Function経由**（キーはサーバー側のみ） |
 | ミス種類の分類 | Python（pypinyin） | **クライアントJS**（pinyin-pro） |
 
+| 家族間の可視性 | — | **なし**（互いのデータもプロフィールも見えない） |
+
 記事モード（Notion同期）のみ家族版の対象外。現行アプリでそのまま使える。
+
+---
+
+## 既知の制約
+
+| 項目 | 内容 |
+|---|---|
+| **Azure F0** | 月5時間・**同時リクエスト1件**。家族が同時に録音すると待たされる（自動で2回再試行） |
+| **移行スクリプトの再実行** | `sentences` / `words` は冪等だが、**`fails` / `practices` は2回流すと二重に入る**。やり直すときは先に該当ユーザーの行を消す |
+| **バックアップ** | Supabase Free に自動バックアップは**無い**。定期 `pg_dump` は未実装（`../../docs/00-business/exit-plan.md` §3） |
 
 ---
 

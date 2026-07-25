@@ -775,8 +775,10 @@ create policy "own read" on usage_logs    for select using (auth.uid() = user_id
 - [ ] 📊 記録タブ（苦手な音・直近30日・拼音ルビ）
 - [ ] 中国語 `fine` の**词（単語）分割**（`pinyin-pro` の `segment()`。1文字分割にしない。同 §3.3）
 - [ ] 日付表示の**JST変換**（timestamptz は UTC で返るため）
-- [ ] PWA manifest とアイコン
-- [ ] `vercel.json`（SPA rewrites）
+- [ ] PWA manifest
+- [ ] `vercel.json`（SPA rewrites）※同梱済み
+- [ ] PWAアイコン（`icon-192/512.png` `apple-touch-icon.png`）※仮アイコン同梱済み。差し替え可
+- [ ] keepalive を手動実行して疎通確認（`public.ping()` 経由。RLS非依存）
 - [ ] **`current-app-spec.md` の全項目を「移植/廃止/変更」で埋める**
 
 ### 12.4 移行と確認

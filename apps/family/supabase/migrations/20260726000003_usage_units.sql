@@ -19,3 +19,21 @@ comment on column usage_logs.model is
 -- 月次の集計を軽くする
 create index if not exists usage_logs_kind_month
   on usage_logs (kind, created_at desc);
+
+-- ── keepalive 用の ping ────────────────────────────────────────────
+-- Supabase Free は1週間無操作で一時停止する。GitHub Actions が週1回叩く。
+--
+-- テーブルを直接 SELECT する方式にしていたが、RLSポリシーの変更で
+-- 結果が変わりうる（実際 "family read" を廃止した）。
+-- security definer の関数にして、**RLSから独立**させる。
+create or replace function public.ping()
+returns timestamptz
+language sql
+security definer set search_path = public
+as $$ select now(); $$;
+
+revoke all on function public.ping() from public;
+grant execute on function public.ping() to anon, authenticated;
+
+comment on function public.ping() is
+  'keepalive 専用。DBに必ず到達させるためだけの関数。情報は返さない';
