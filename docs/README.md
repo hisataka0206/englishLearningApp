@@ -13,6 +13,7 @@
 | 事業版で何が増えるのか | `10-specs/saas-diff-spec.md` |
 | どの順で進めるのか | `20-plans/execution-plan.md` |
 | 家族版で何を測るのか | `20-plans/family-evaluation-plan.md` |
+| **次のゲートで何をするのか** | `20-plans/gate-resume.md`（カレンダーからの飛び先） |
 | 仕様と実装が合っているか | `40-tests/test-report.md`（現行アプリ）／`40-tests/spec-review-family-saas.md`（家族版・事業版） |
 | 情報源とライセンス | `30-research/content-sources.md`（**正典**） |
 | なぜこの技術構成なのか | `30-research/saas-migration-study.md` |
@@ -41,6 +42,7 @@ docs/
 ├── 20-plans/        計画 — どう進めるか
 │   ├── execution-plan.md         実行計画（Phase構成・現在地）
 │   ├── family-evaluation-plan.md 家族版の評価計画書
+│   ├── gate-resume.md            ★ゲート再開メモ（貼り付け用プロンプト・集計SQL）
 │   └── status-summary.md         検討の現況整理（経緯のログ）
 │
 ├── 30-research/     調査 — なぜそう判断したか
