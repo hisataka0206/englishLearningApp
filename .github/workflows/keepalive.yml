@@ -5,10 +5,9 @@
 #    RLSから独立した public.ping()（security definer）を呼ぶ方式に変更した。
 #    → migration 20260726000003_usage_units.sql で定義
 #
-# ★2 APIキーは **apikey ヘッダにのみ** 載せる。
+# ★2 APIキーは apikey ヘッダにのみ載せる。
 #    新形式の publishable key（sb_publishable_…）は JWT ではないため、
-#    Authorization: Bearer に載せると JWT として解釈されて
-#    401 Invalid API key になる。（旧 anon key はJWTだったので通っていた）
+#    Authorization: Bearer に載せると JWT として解釈されて 401 になる。
 name: keepalive
 on:
   schedule:
@@ -19,14 +18,35 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
+      # Secrets の中身は出さず、「形」だけを出して取り違えを特定できるようにする
+      - name: Check secrets (値は出力しない)
+        env:
+          URL: ${{ secrets.SUPABASE_URL }}
+          KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          echo "SUPABASE_URL"
+          echo "  長さ    : ${#URL}          （正解は 40）"
+          echo "  ホスト  : $(echo "$URL" | sed -E 's#^https?://##; s#/.*##')"
+          echo "  末尾に/ : $(case "$URL" in */) echo 'あり ★不要';; *) echo 'なし';; esac)"
+          echo "  パス付き: $(case "$URL" in */rest/v1*) echo 'あり ★不要';; *) echo 'なし';; esac)"
+          echo "SUPABASE_ANON_KEY"
+          echo "  長さ    : ${#KEY}          （正解は 46）"
+          echo "  種別    : $(case "$KEY" in sb_publishable_*) echo 'publishable ✅';; sb_secret_*) echo 'secret ★これは使わない';; eyJ*) echo 'JWT（旧anon/service_role）';; '') echo '空 ★未設定';; *) echo '不明な形式 ★';; esac)"
+          if [ "${#URL}" -eq 0 ] || [ "${#KEY}" -eq 0 ]; then
+            echo "::error::Secrets が未設定。名前は SUPABASE_URL / SUPABASE_ANON_KEY（大文字・アンダースコア）で登録すること"
+            exit 1
+          fi
+
       - name: Ping Supabase
+        env:
+          URL: ${{ secrets.SUPABASE_URL }}
+          KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           # 末尾スラッシュや /rest/v1 が付いていても動くように整形する
-          url="${{ secrets.SUPABASE_URL }}"
-          url="${url%/}"; url="${url%/rest/v1}"; url="${url%/}"
+          url="${URL%/}"; url="${url%/rest/v1}"; url="${url%/}"
 
           res=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "apikey: $KEY" \
             -H "Content-Type: application/json" \
             -d '{}' \
             "$url/rest/v1/rpc/ping")
@@ -38,9 +58,9 @@ jobs:
           if [ "$code" = "200" ]; then exit 0; fi
 
           case "$code" in
-            401) echo "::error::APIキーが不正。Secrets の SUPABASE_ANON_KEY が Publishable key か、余分な空白・改行が入っていないか確認" ;;
+            401) echo "::error::APIキーが不正。上の『長さ』『種別』が正解と一致しているか確認。ブラウザで動いている web/config.js の値をそのままコピーすること（部分的にコピーすると長さがずれる）" ;;
             404) echo "::error::public.ping() が見つからない。migration 3本目（20260726000003_usage_units.sql）を適用してください" ;;
-            000) echo "::error::接続できない。Secrets の SUPABASE_URL を確認（https://<ref>.supabase.co の形式）" ;;
+            000) echo "::error::接続できない。SUPABASE_URL のホスト名を確認" ;;
             *)   echo "::error::keepalive に失敗（HTTP $code）。上の body を確認してください" ;;
           esac
           exit 1
