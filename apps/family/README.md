@@ -39,6 +39,24 @@ family/
 > bash deploy.sh check     # 前提が揃っているか確認（何も変更しない）
 > ```
 
+### 必要な値と、その在り処（先にここを開いて全部コピーしておくと速い）
+
+| 必要な値 | ダッシュボードのどこ | 使う場所 |
+|---|---|---|
+| **Project ID**（＝ Reference ID） | **Settings → General → Project ID**「Reference used in APIs and URLs」<br>例: `hnjpsvqoldcfuy…` | `supabase link --project-ref <ここ>` |
+| **Project URL** | Settings → API → Project URL<br>例: `https://<Project ID>.supabase.co` | `web/config.js` の `SUPABASE_URL`<br>GitHub Secrets の `SUPABASE_URL`<br>移行スクリプトの `SUPABASE_URL` |
+| **Publishable key**<br>（＝旧 anon key） | Settings → **API Keys** → Publishable key<br>`sb_publishable_…` または `eyJ…` | `web/config.js` の `SUPABASE_ANON_KEY`<br>GitHub Secrets の `SUPABASE_ANON_KEY` |
+| **Secret key**<br>（＝旧 service_role key） | Settings → **API Keys** → Secret keys<br>`sb_secret_…` または `eyJ…` | 移行スクリプトの `SUPABASE_SERVICE_ROLE_KEY`<br>**絶対に公開しない** |
+| **ユーザーUUID** | Authentication → Users → 自分の行の UID | 移行スクリプトの `USER_ID` |
+| **DBパスワード** | プロジェクト作成時に自分で決めたもの<br>忘れたら Settings → Database → Reset database password | `supabase link` で聞かれる |
+
+> **キーの名前が新しくなっている。** Supabase は `anon` / `service_role` を
+> **`publishable` / `secret`** に置き換えつつある（旧キーも当面は動く）。
+> 本書の `SUPABASE_ANON_KEY` は publishable key、`SUPABASE_SERVICE_ROLE_KEY` は secret key のこと。
+> ダッシュボードに「anon」が見つからないときは **API Keys タブ**を見る。
+
+---
+
 ### 0. CLI の準備（初回だけ）
 
 ```bash
@@ -151,12 +169,12 @@ supabase functions deploy assess
 
 ### 4. クライアント設定
 
-`web/config.js` の2値を、Supabase の Project Settings → API から書き換える。
+`web/config.js` の2値を書き換える（上の表の **Project URL** と **Publishable key**）。
 
 ```js
 export const CONFIG = {
   SUPABASE_URL: "https://xxxx.supabase.co",
-  SUPABASE_ANON_KEY: "eyJ...",   // RLSが効いている前提で公開可
+  SUPABASE_ANON_KEY: "sb_publishable_...",   // Publishable key。RLSが効いている前提で公開可
 };
 ```
 
@@ -167,7 +185,7 @@ cd scripts
 python3 migrate_to_supabase.py --data ../../local/data --dry-run    # まず確認
 
 export SUPABASE_URL=https://xxxx.supabase.co
-export SUPABASE_SERVICE_ROLE_KEY=eyJ...      # service_role キー（絶対に公開しない）
+export SUPABASE_SERVICE_ROLE_KEY=sb_secret_...   # Secret key（旧 service_role）。絶対に公開しない
 export USER_ID=<自分のユーザーUUID>
 python3 migrate_to_supabase.py --data ../../local/data
 ```
