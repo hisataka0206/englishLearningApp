@@ -207,7 +207,49 @@ python3 migrate_to_supabase.py --data ../../local/data
 
 ### 6. デプロイ（Vercel Hobby）
 
-**`web/` をプロジェクトのルートディレクトリとして配置する。** 必要なファイルは同梱済み。
+アプリの**画面をインターネットに公開する**作業。ここまでで作ったのは裏側（DB・認証・Edge Function）だけで、
+`web/` はまだ手元にしかない。公開して初めて **娘のiPhoneから使える**ようになる。
+録音（発音チェック）は **HTTPS でないと動かない**ので、その意味でも必須。
+
+#### 6.1 先に push する
+
+Vercel は **GitHub 上のコード**を見る。手元のコミットが残っていると古い版が公開される。
+
+```bash
+cd ~/work/englishLearningApp
+git status          # 未コミットが無いこと
+git push
+```
+
+#### 6.2 GitHub と連携する（★URLを貼る欄は使わない）
+
+トップの「Let's build something new」に **`.git` のURLを貼る欄があるが、これは公開リポジトリ専用**。
+本リポジトリは **private**（事業計画・収益予測を含むため公開しない）なので、貼ると
+
+```
+Could not access the repository. Please ensure you have access to it.
+```
+
+で弾かれる。**正しい手順はこちら。**
+
+1. Vercel で **Add New → Project**
+2. **Import Git Repository** の欄で GitHub アカウントを接続
+3. **「Adjust GitHub App Permissions」** を開き、**`englishLearningApp` にアクセスを許可**する
+   （All repositories でも、Only select repositories でこのリポジトリだけでもよい）
+4. 一覧に出てきた `englishLearningApp` の **Import** を押す
+
+> Vercel Hobby は**private リポジトリでもデプロイできる**。公開する必要はない。
+
+#### 6.3 設定
+
+| 項目 | 値 |
+|---|---|
+| **Root Directory** | **`apps/family/web`** ★ここが最重要。既定のままだとリポジトリ全体を公開しようとして失敗する |
+| Framework Preset | **Other**（ビルド不要の素のHTML/JS） |
+| Build Command | 空のまま |
+| Output Directory | 空のまま |
+
+**必要なファイルは同梱済み。**
 
 | ファイル | 役割 |
 |---|---|
@@ -216,6 +258,11 @@ python3 migrate_to_supabase.py --data ../../local/data
 | `icon-192.png` / `icon-512.png` / `apple-touch-icon.png` | ホーム画面のアイコン。**仮のもの**なので好きな絵に差し替えてよい（同名・同サイズで置くだけ） |
 
 > iOS はホーム画面追加時に manifest の `icons` を見ないため、`apple-touch-icon.png` が別に要る（`index.html` で参照済み）。
+
+> **★ 手順4（`web/config.js` の書き換え）を先に済ませること。**
+> Supabase の URL とキーが入っていないと、デプロイしても真っ白な画面になる。
+
+発行された `https://xxxx.vercel.app` を iPhone で開き、**共有 → ホーム画面に追加**。
 
 ### 7. keepalive
 
