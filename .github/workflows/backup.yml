@@ -1,0 +1,103 @@
+# 家族版データの週次バックアップ（軽い版）
+#
+# 目的は「データを守る」より **評価期間2ヶ月ぶんの判断材料を守る**こと。
+# Supabase Free に自動バックアップは無く、いちばん起きやすい事故は
+# トラブル対応中の DELETE や移行スクリプトの再実行（＝自分で消す）。
+#
+# pg_dump は使わない。守りたいのは小さなテーブル数本なので、
+# PostgREST から JSON で吸い出して Actions の成果物に置くだけにしている。
+#
+# ★ APIキーは apikey ヘッダにのみ載せる（新形式キーはJWTではないため、
+#   Authorization: Bearer に載せると 401 になる。keepalive で踏んだ罠）
+#
+# 対象外: auth.users（アカウント情報）。PostgREST から取れないが、
+#         アカウントはダッシュボードで作り直せるので実害はない。
+name: backup
+on:
+  schedule:
+    - cron: "10 3 * * 0"   # 毎週日曜 03:10 UTC = 12:10 JST
+  workflow_dispatch:
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump tables to JSON
+        env:
+          URL: ${{ secrets.SUPABASE_URL }}
+          KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${URL:-}" ] || [ -z "${KEY:-}" ]; then
+            echo "::error::Secrets が未設定。SUPABASE_URL と SUPABASE_SECRET_KEY を登録してください"
+            exit 1
+          fi
+          case "$KEY" in
+            sb_publishable_*) echo "::error::Publishable キーでは全行を読めません。**Secret キー**を登録してください"; exit 1 ;;
+          esac
+
+          # 末尾スラッシュや /rest/v1 が付いていても動くように整形
+          url="${URL%/}"; url="${url%/rest/v1}"; url="${url%/}"
+
+          stamp=$(TZ=Asia/Tokyo date +%Y%m%d-%H%M)
+          out="backup-$stamp"
+          mkdir -p "$out"
+
+          TABLES="profiles sentences words fails practices assessments usage_logs subscriptions"
+          : > "$out/MANIFEST.txt"
+          echo "backup: $stamp (JST)" >> "$out/MANIFEST.txt"
+          echo "project: $(echo "$url" | sed -E 's#^https?://##; s#\..*##')" >> "$out/MANIFEST.txt"
+          echo "" >> "$out/MANIFEST.txt"
+
+          total=0
+          for t in $TABLES; do
+            # PostgREST は既定1000件で切るのでページングする
+            offset=0; page=1000; first=1
+            echo "[" > "$out/$t.json"
+            while : ; do
+              body=$(curl -sS -f \
+                -H "apikey: $KEY" \
+                -H "Accept: application/json" \
+                "$url/rest/v1/$t?select=*&order=id.asc&limit=$page&offset=$offset") || {
+                  echo "::error::$t の取得に失敗しました"; exit 1; }
+              n=$(echo "$body" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')
+              if [ "$n" -gt 0 ]; then
+                [ "$first" -eq 1 ] || echo "," >> "$out/$t.json"
+                echo "$body" | python3 -c 'import json,sys; print(",\n".join(json.dumps(r,ensure_ascii=False) for r in json.load(sys.stdin)))' >> "$out/$t.json"
+                first=0
+              fi
+              [ "$n" -lt "$page" ] && break
+              offset=$((offset + page))
+            done
+            echo "]" >> "$out/$t.json"
+
+            rows=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$out/$t.json")
+            total=$((total + rows))
+            printf "%-14s %6d 行\n" "$t" "$rows" | tee -a "$out/MANIFEST.txt"
+          done
+
+          echo "" >> "$out/MANIFEST.txt"
+          echo "合計 $total 行" >> "$out/MANIFEST.txt"
+          echo "TOTAL_ROWS=$total" >> "$GITHUB_ENV"
+          echo "OUT_DIR=$out" >> "$GITHUB_ENV"
+
+          # 全部が空＝設定ミスかデータ消失。気づけるように落とす
+          if [ "$total" -eq 0 ]; then
+            echo "::error::1行も取得できませんでした。キーの種別（Secret か）とテーブルの存在を確認してください"
+            exit 1
+          fi
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.OUT_DIR }}
+          path: ${{ env.OUT_DIR }}/
+          retention-days: 90        # 評価期間2ヶ月をカバーする
+
+      - name: Summary
+        run: |
+          echo "### バックアップ完了" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat "$OUT_DIR/MANIFEST.txt" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "Artifacts から \`$OUT_DIR\` をダウンロードできます（90日保持）" >> $GITHUB_STEP_SUMMARY

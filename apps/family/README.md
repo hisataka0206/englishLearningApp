@@ -313,7 +313,33 @@ Could not access the repository. Please ensure you have access to it.
 > DBに必ず到達させるため `public.ping()` を呼ぶ（migration 3本目で作成）。
 > テーブルを直接読む方式だと、RLSポリシーを変えたときに黙って壊れるため。
 
-### 8. 動作確認
+### 8. バックアップ（週次・自動）
+
+Supabase Free に**自動バックアップは無い**。評価期間の2ヶ月ぶんは
+「アプリのデータ」であると同時に**GO/NO-GO の判断材料**なので、薄く保険をかける。
+
+1. GitHub → Settings → Secrets → **`SUPABASE_SECRET_KEY`** を追加
+   - 値は **Secret key**（`sb_secret_…`。Settings → API Keys → Secret keys）
+   - 移行スクリプトの `SUPABASE_SERVICE_ROLE_KEY` と**同じ値**
+   - `SUPABASE_URL` は keepalive で登録済みのものを共用する
+2. Actions → **backup** → Run workflow で1回試す
+3. 実行結果の **Artifacts** から `backup-YYYYMMDD-HHMM` をダウンロードできる
+
+| | |
+|---|---|
+| 頻度 | 毎週日曜 12:10 JST（＋手動実行） |
+| 対象 | 8テーブルをJSONで（`profiles` `sentences` `words` `fails` `practices` `assessments` `usage_logs` `subscriptions`） |
+| 保持 | **90日**（評価期間2ヶ月をカバー） |
+| 対象外 | `auth.users`（アカウント）。ダッシュボードで作り直せるので実害なし |
+
+> **`pg_dump` は使っていない。** 守る対象が小さいテーブル数本なので、
+> PostgREST から JSON で吸い出すだけにしてある。事業版に進むなら
+> そのときに完全なダンプへ切り替える（`../../docs/00-business/exit-plan.md` §3）。
+
+> **戻し方**：JSONをそのまま `POST /rest/v1/<table>`（Secret キー、`Prefer: resolution=ignore-duplicates`）に投げる。
+> `scripts/migrate_to_supabase.py` の `post()` がそのまま使える。
+
+### 9. 動作確認
 
 下の「受け入れ確認」を実機（iPhone）で1つずつ確認する。
 
@@ -344,7 +370,7 @@ Could not access the repository. Please ensure you have access to it.
 |---|---|
 | **Azure F0** | 月5時間・**同時リクエスト1件**。家族が同時に録音すると待たされる（自動で2回再試行） |
 | **移行スクリプトの再実行** | `sentences` / `words` は冪等だが、**`fails` / `practices` は2回流すと二重に入る**。やり直すときは先に該当ユーザーの行を消す |
-| **バックアップ** | Supabase Free に自動バックアップは**無い**。定期 `pg_dump` は未実装（`../../docs/00-business/exit-plan.md` §3） |
+| **バックアップ** | Supabase Free に自動バックアップは**無い**。週次のJSONダンプで代替している（手順8）。完全な `pg_dump` は事業版に進むときに |
 
 ---
 
