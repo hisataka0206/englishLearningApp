@@ -3,7 +3,22 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { CONFIG } from "./config.js";
 
-export const sb = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+/** SUPABASE_URL を正規化する。
+ *
+ *  ダッシュボードの「RESTful endpoint」（`.../rest/v1/`）を貼ってしまうと、
+ *  supabase-js が `.../rest/v1//auth/v1/token` のようなURLを組み立て、
+ *  **Invalid path specified in request URL（PGRST125）** でログインすら通らない。
+ *  正しくは Project URL（`https://<ref>.supabase.co` ／ パス無し）。
+ */
+function baseUrl(raw) {
+  let u = (raw || "").trim().replace(/\/+$/, "");
+  for (const suf of ["/rest/v1", "/auth/v1", "/functions/v1"]) {
+    if (u.endsWith(suf)) u = u.slice(0, -suf.length);
+  }
+  return u.replace(/\/+$/, "");
+}
+
+export const sb = createClient(baseUrl(CONFIG.SUPABASE_URL), CONFIG.SUPABASE_ANON_KEY);
 
 // ★ Postgres の timestamptz は UTC で返るため、そのまま slice(0,10) すると
 //   JST 00:00〜08:59 の記録が「前日」として表示される。必ずこの関数を通すこと。
