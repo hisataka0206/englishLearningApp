@@ -44,7 +44,7 @@ family/
 | 必要な値 | ダッシュボードのどこ | 使う場所 |
 |---|---|---|
 | **Project ID**（＝ Reference ID） | **Settings → General → Project ID**「Reference used in APIs and URLs」<br>例: `hnjpsvqoldcfuy…` | `supabase link --project-ref <ここ>` |
-| **Project URL** | Settings → API → Project URL<br>例: `https://<Project ID>.supabase.co` | `web/config.js` の `SUPABASE_URL`<br>GitHub Secrets の `SUPABASE_URL`<br>移行スクリプトの `SUPABASE_URL` |
+| **Project URL** | Settings → API → Project URL<br>`https://<Project ID>.supabase.co`<br>**★ パスを含めない**（`/rest/v1/` が付いた「RESTful endpoint」と間違えやすい） | `web/config.js` の `SUPABASE_URL`<br>GitHub Secrets の `SUPABASE_URL`<br>移行スクリプトの `SUPABASE_URL` |
 | **Publishable key**<br>（＝旧 anon key） | Settings → **API Keys** → Publishable key<br>`sb_publishable_…` または `eyJ…` | `web/config.js` の `SUPABASE_ANON_KEY`<br>GitHub Secrets の `SUPABASE_ANON_KEY` |
 | **Secret key**<br>（＝旧 service_role key） | Settings → **API Keys** → Secret keys<br>`sb_secret_…` または `eyJ…` | 移行スクリプトの `SUPABASE_SERVICE_ROLE_KEY`<br>**絶対に公開しない** |
 | **ユーザーUUID** | Authentication → Users → 自分の行の UID | 移行スクリプトの `USER_ID` |
@@ -171,6 +171,12 @@ supabase functions deploy assess
 
 `web/config.js` の2値を書き換える（上の表の **Project URL** と **Publishable key**）。
 
+> **★ よくある取り違え**：API設定ページには似たURLが複数並んでいる。
+> **`https://<ref>.supabase.co` を使う**（パス無し）。
+> `https://<ref>.supabase.co/rest/v1/`（RESTful endpoint）を貼ると、
+> **ログイン時に `Invalid path specified in request URL` が出て何もできない**。
+> （`data-api.js` の `baseUrl()` で自動的に落とすようにしたが、正しい値を入れるのが本筋）
+
 ```js
 export const CONFIG = {
   SUPABASE_URL: "https://xxxx.supabase.co",
@@ -199,6 +205,7 @@ python3 migrate_to_supabase.py --data ../../local/data
 | `HTTP 404 PGRST125 Invalid path specified in request URL` | **`SUPABASE_URL` の末尾に `/` が付いている**（`//rest/v1/...` になる）。ダッシュボードからコピーすると付くことがある | 末尾の `/` を外す。スクリプト側でも自動で落とすようにした |
 | `HTTP 401` | Publishable（旧anon）キーを使っている | **Secret（旧service_role）キー**を使う |
 | `HTTP 404`（PGRST125以外） | テーブルが無い | マイグレーション3本を適用したか確認 |
+| **ログイン画面で** `Invalid path specified in request URL` | `web/config.js` の `SUPABASE_URL` に `/rest/v1/` が付いている | Project URL（パス無し）に直して push（Vercelが自動で再デプロイ） |
 | `violates foreign key constraint` | `USER_ID` が実在しない | Authentication → Users の UID をコピーする |
 | 実施回数が倍になった | **`fails` / `practices` は冪等でない** | 先に消してから再実行する<br>`delete from practices where user_id='<UID>';`<br>`delete from fails where user_id='<UID>';` |
 
