@@ -71,7 +71,21 @@ supabase login           # ブラウザが開く。アクセストークンを�
 ### 1. Supabase プロジェクト作成とリンク
 
 1. [supabase.com](https://supabase.com) で新規プロジェクト（**リージョン Tokyo / Free**）
-2. **Authentication → Providers → Email → "Enable email signup" を OFF**（第三者の登録を防ぐ）
+2. **認証の設定**（★ここを間違えるとログインできなくなる）
+
+   | 設定 | 値 | 場所 |
+   |---|---|---|
+   | **Email プロバイダ** | **ON**（有効のまま） | Authentication → Sign In / Providers → **Email** |
+   | **Allow new users to sign up**<br>（新規登録の許可） | **OFF** | 同ページの **User Signups** セクション |
+
+   > **「Email プロバイダ」自体を OFF にしてはいけない。**
+   > OFF にすると新規登録だけでなく**ログインも塞がれ**、
+   > `Email logins are disabled` が出て誰も入れなくなる。
+   >
+   > 止めたいのは**第三者の新規登録だけ**なので、切るのは「Allow new users to sign up」の方。
+   >
+   > **順番に確認するのが安全**：まず Email プロバイダ ON のままログインできることを確かめ、
+   > そのあと signup を OFF にして、**もう一度ログインできることを確認**する。
 3. プロジェクトを CLI に紐付ける
 
 ```bash
@@ -206,6 +220,8 @@ python3 migrate_to_supabase.py --data ../../local/data
 | `HTTP 401` | Publishable（旧anon）キーを使っている | **Secret（旧service_role）キー**を使う |
 | `HTTP 404`（PGRST125以外） | テーブルが無い | マイグレーション3本を適用したか確認 |
 | **ログイン画面で** `Invalid path specified in request URL` | `web/config.js` の `SUPABASE_URL` に `/rest/v1/` が付いている | Project URL（パス無し）に直して push（Vercelが自動で再デプロイ） |
+| **ログイン画面で** `Email logins are disabled` | **Email プロバイダごと OFF になっている**（新規登録だけを止めたつもりで全部止まっている） | Authentication → Sign In / Providers → **Email を ON**。止めるのは「Allow new users to sign up」の方（手順1-2） |
+| **ログイン画面で** `メールアドレスかパスワードが違います` | 文字どおり。または**ユーザーをまだ作っていない** | Authentication → Users → Add user（`email_confirm` をON） |
 | `violates foreign key constraint` | `USER_ID` が実在しない | Authentication → Users の UID をコピーする |
 | 実施回数が倍になった | **`fails` / `practices` は冪等でない** | 先に消してから再実行する<br>`delete from practices where user_id='<UID>';`<br>`delete from fails where user_id='<UID>';` |
 
