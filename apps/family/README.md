@@ -46,14 +46,24 @@ family/
 | **Project ID**（＝ Reference ID） | **Settings → General → Project ID**「Reference used in APIs and URLs」<br>例: `hnjpsvqoldcfuy…` | `supabase link --project-ref <ここ>` |
 | **Project URL** | Settings → API → Project URL<br>`https://<Project ID>.supabase.co`<br>**★ パスを含めない**（`/rest/v1/` が付いた「RESTful endpoint」と間違えやすい） | `web/config.js` の `SUPABASE_URL`<br>GitHub Secrets の `SUPABASE_URL`<br>移行スクリプトの `SUPABASE_URL` |
 | **Publishable key**<br>（＝旧 anon key） | Settings → **API Keys** → Publishable key<br>`sb_publishable_…` または `eyJ…` | `web/config.js` の `SUPABASE_ANON_KEY`<br>GitHub Secrets の `SUPABASE_ANON_KEY` |
-| **Secret key**<br>（＝旧 service_role key） | Settings → **API Keys** → Secret keys<br>`sb_secret_…` または `eyJ…` | 移行スクリプトの `SUPABASE_SERVICE_ROLE_KEY`<br>**絶対に公開しない** |
+| **Secret key**<br>（＝旧 service_role key） | Settings → **API Keys** → Secret keys<br>**目のアイコン（Reveal）で表示**（伏せているだけで何度でも見られる）<br>見つからなければ **Legacy API Keys** タブの `service_role`（`eyJ…`）でも可 | 移行スクリプトの `SUPABASE_SERVICE_ROLE_KEY`<br>GitHub Secrets の `SUPABASE_SECRET_KEY`<br>**絶対に公開しない** |
 | **ユーザーUUID** | Authentication → Users → 自分の行の UID | 移行スクリプトの `USER_ID` |
 | **DBパスワード** | プロジェクト作成時に自分で決めたもの<br>忘れたら Settings → Database → Reset database password | `supabase link` で聞かれる |
 
 > **キーの名前が新しくなっている。** Supabase は `anon` / `service_role` を
 > **`publishable` / `secret`** に置き換えつつある（旧キーも当面は動く）。
-> 本書の `SUPABASE_ANON_KEY` は publishable key、`SUPABASE_SERVICE_ROLE_KEY` は secret key のこと。
 > ダッシュボードに「anon」が見つからないときは **API Keys タブ**を見る。
+>
+> **同じ値が3つの名前で出てくるので注意。**
+>
+> | 実体 | 移行スクリプト | GitHub Secrets | `web/config.js` |
+> |---|---|---|---|
+> | Publishable（旧 anon） | — | `SUPABASE_ANON_KEY` | `SUPABASE_ANON_KEY` |
+> | **Secret（旧 service_role）** | `SUPABASE_SERVICE_ROLE_KEY` | **`SUPABASE_SECRET_KEY`** | 使わない |
+>
+> **Secret キーが分からなくなったら**：①ターミナルの履歴（`history | grep SERVICE_ROLE`）
+> ②ダッシュボードで Reveal ③Legacy API Keys タブの `service_role`
+> ④作り直してもよい（既存キーは無効化されない）
 
 ---
 
@@ -319,8 +329,8 @@ Supabase Free に**自動バックアップは無い**。評価期間の2ヶ月�
 「アプリのデータ」であると同時に**GO/NO-GO の判断材料**なので、薄く保険をかける。
 
 1. GitHub → Settings → Secrets → **`SUPABASE_SECRET_KEY`** を追加
-   - 値は **Secret key**（`sb_secret_…`。Settings → API Keys → Secret keys）
-   - 移行スクリプトの `SUPABASE_SERVICE_ROLE_KEY` と**同じ値**
+   - 値は **Secret key**（`sb_secret_…`。Settings → API Keys → Secret keys の **Reveal**）
+   - 移行スクリプトの `SUPABASE_SERVICE_ROLE_KEY` と**同じ値**（`history | grep SERVICE_ROLE` でも出る）
    - `SUPABASE_URL` は keepalive で登録済みのものを共用する
 2. Actions → **backup** → Run workflow で1回試す
 3. 実行結果の **Artifacts** から `backup-YYYYMMDD-HHMM` をダウンロードできる
