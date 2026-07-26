@@ -421,6 +421,11 @@ create policy "own read" on usage_logs    for select using (auth.uid() = user_id
 
 **ポリシーは8本**（`own rows`×5＝sentences/words/fails/practices/assessments、`own profile`、`own read`×2）。
 
+> **主キーはテーブルで揃っていない。** `subscriptions` だけ `user_id` が主キーで **`id` 列を持たない**
+> （`profiles` は `id`＝`auth.users.id`、他は `id`）。
+> 全テーブルを機械的に走査する処理（バックアップ・エクスポート等）で `order=id` を決め打ちすると
+> `subscriptions` だけ 400 になる。
+
 > **`usage_logs` への INSERT は Edge Function（サービスロール）からのみ**。クライアントに書かせない。
 
 ### 5.3 `last_active_at` の更新

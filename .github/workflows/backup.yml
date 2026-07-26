@@ -43,14 +43,19 @@ jobs:
           out="backup-$stamp"
           mkdir -p "$out"
 
-          TABLES="profiles sentences words fails practices assessments usage_logs subscriptions"
+          # ★ ページングを安定させるため必ず並び順を指定する。
+          #   subscriptions だけ主キーが user_id で `id` 列が無く、
+          #   order=id.asc を決め打ちすると 400 になる。テーブルごとにキーを持つ。
+          TABLES="profiles:id sentences:id words:id fails:id practices:id assessments:id usage_logs:id subscriptions:user_id"
           : > "$out/MANIFEST.txt"
           echo "backup: $stamp (JST)" >> "$out/MANIFEST.txt"
           echo "project: $(echo "$url" | sed -E 's#^https?://##; s#\..*##')" >> "$out/MANIFEST.txt"
           echo "" >> "$out/MANIFEST.txt"
 
           total=0
-          for t in $TABLES; do
+          failed=""
+          for spec in $TABLES; do
+            t="${spec%%:*}"; key="${spec##*:}"
             # PostgREST は既定1000件で切るのでページングする
             offset=0; page=1000; first=1
             echo "[" > "$out/$t.json"
@@ -58,8 +63,9 @@ jobs:
               body=$(curl -sS -f \
                 -H "apikey: $KEY" \
                 -H "Accept: application/json" \
-                "$url/rest/v1/$t?select=*&order=id.asc&limit=$page&offset=$offset") || {
-                  echo "::error::$t の取得に失敗しました"; exit 1; }
+                "$url/rest/v1/$t?select=*&order=$key.asc&limit=$page&offset=$offset") || {
+                  echo "::warning::$t の取得に失敗（order=$key）。他のテーブルは続行します"
+                  failed="$failed $t"; break; }
               n=$(echo "$body" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')
               if [ "$n" -gt 0 ]; then
                 [ "$first" -eq 1 ] || echo "," >> "$out/$t.json"
@@ -85,6 +91,12 @@ jobs:
           if [ "$total" -eq 0 ]; then
             echo "::error::1行も取得できませんでした。キーの種別（Secret か）とテーブルの存在を確認してください"
             exit 1
+          fi
+          # 一部失敗しても取れたぶんは残す（Uploadは走らせる）。最後に警告だけ出す
+          if [ -n "$failed" ]; then
+            echo "FAILED_TABLES=$failed" >> "$GITHUB_ENV"
+            echo "::warning::取得できなかったテーブル:$failed"
+            echo "取得失敗:$failed" >> "$out/MANIFEST.txt"
           fi
 
       - name: Upload
