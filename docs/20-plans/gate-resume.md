@@ -38,12 +38,12 @@ docs/00-business/go-nogo-plan.md を読んで、
 
 | 目的 | パス |
 |---|---|
-| **何を測るか・集計SQL** | `docs/20-plans/family-evaluation-plan.md` |
-| **判断基準（A〜D / E〜G / X〜W）** | `docs/00-business/go-nogo-plan.md` |
-| GO のとき次に作るもの | `docs/10-specs/saas-diff-spec.md`（特に §10「初期リリースに含めないもの」） |
-| 原価・料金の前提 | `docs/00-business/pricing-plan.md` |
-| 撤退ライン（事業開始**後**の話） | `docs/00-business/exit-plan.md` |
-| 家族版の仕様・運用 | `apps/family/README.md` |
+| **何を測るか・集計SQL** | `family-evaluation-plan.md` |
+| **判断基準（A〜D / E〜G / X〜W）** | `../00-business/go-nogo-plan.md` |
+| GO のとき次に作るもの | `../10-specs/saas-diff-spec.md`（特に §10「初期リリースに含めないもの」） |
+| 原価・料金の前提 | `../00-business/pricing-plan.md` |
+| 撤退ライン（事業開始**後**の話） | `../00-business/exit-plan.md` |
+| 家族版の仕様・運用 | `../../apps/family/README.md` |
 
 Supabase ダッシュボード → SQL Editor で流す。プロジェクト: `hnjpsvqoldcfuyyjztwa`
 
