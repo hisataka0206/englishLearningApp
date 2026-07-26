@@ -299,6 +299,16 @@ Could not access the repository. Please ensure you have access to it.
 1. GitHub リポジトリの Secrets に `SUPABASE_URL` と `SUPABASE_ANON_KEY` を登録する
 2. **Actions タブから `keepalive` を手動実行（Run workflow）して、緑になることを確認する**
 
+| 失敗したら | 意味 | 対処 |
+|---|---|---|
+| `HTTP 401 Invalid API key` | Secrets の `SUPABASE_ANON_KEY` が違う／余分な空白・改行が入っている | Publishable key を貼り直す |
+| `HTTP 404` | `public.ping()` が無い | マイグレーション**3本目**を適用（`bash deploy.sh db`） |
+| `HTTP 000` | URLに到達できない | `SUPABASE_URL` を確認（`https://<ref>.supabase.co`） |
+
+> **APIキーは `apikey` ヘッダにのみ載せる。** 新形式の Publishable key（`sb_publishable_…`）は
+> **JWTではない**ため、`Authorization: Bearer` に載せると JWT として解釈され `Invalid API key` になる。
+> （旧 anon key はJWTだったので両方に載せても通っていた）
+
 > ワークフローは**リポジトリルートの `.github/workflows/keepalive.yml`**（GitHub Actions はルートしか読まない）。
 > DBに必ず到達させるため `public.ping()` を呼ぶ（migration 3本目で作成）。
 > テーブルを直接読む方式だと、RLSポリシーを変えたときに黙って壊れるため。

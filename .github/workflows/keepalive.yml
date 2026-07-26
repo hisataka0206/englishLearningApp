@@ -1,9 +1,14 @@
 # Supabase Free プランの一時停止対策（週1回 DB に到達させる）
 #
-# ★ テーブルを SELECT する方式にしていたが、RLSポリシーを変えると結果が変わりうる
-#   （実際 profiles の "family read" を廃止した）。
-#   RLSから独立した public.ping()（security definer）を呼ぶ方式に変更した。
-#   → migration 20260726000003_usage_units.sql で定義
+# ★1 テーブルを SELECT する方式にしていたが、RLSポリシーを変えると結果が変わりうる
+#    （実際 profiles の "family read" を廃止した）。
+#    RLSから独立した public.ping()（security definer）を呼ぶ方式に変更した。
+#    → migration 20260726000003_usage_units.sql で定義
+#
+# ★2 APIキーは **apikey ヘッダにのみ** 載せる。
+#    新形式の publishable key（sb_publishable_…）は JWT ではないため、
+#    Authorization: Bearer に載せると JWT として解釈されて
+#    401 Invalid API key になる。（旧 anon key はJWTだったので通っていた）
 name: keepalive
 on:
   schedule:
@@ -16,17 +21,26 @@ jobs:
     steps:
       - name: Ping Supabase
         run: |
+          # 末尾スラッシュや /rest/v1 が付いていても動くように整形する
+          url="${{ secrets.SUPABASE_URL }}"
+          url="${url%/}"; url="${url%/rest/v1}"; url="${url%/}"
+
           res=$(curl -s -w "\n%{http_code}" -X POST \
             -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "Content-Type: application/json" \
             -d '{}' \
-            "${{ secrets.SUPABASE_URL }}/rest/v1/rpc/ping")
+            "$url/rest/v1/rpc/ping")
           code=$(echo "$res" | tail -n1)
           body=$(echo "$res" | sed '$d')
           echo "HTTP $code"
           echo "body: $body"
-          if [ "$code" != "200" ]; then
-            echo "::error::keepalive に失敗しました。Secrets の値と、migration 3本目（public.ping）が適用済みか確認してください"
-            exit 1
-          fi
+
+          if [ "$code" = "200" ]; then exit 0; fi
+
+          case "$code" in
+            401) echo "::error::APIキーが不正。Secrets の SUPABASE_ANON_KEY が Publishable key か、余分な空白・改行が入っていないか確認" ;;
+            404) echo "::error::public.ping() が見つからない。migration 3本目（20260726000003_usage_units.sql）を適用してください" ;;
+            000) echo "::error::接続できない。Secrets の SUPABASE_URL を確認（https://<ref>.supabase.co の形式）" ;;
+            *)   echo "::error::keepalive に失敗（HTTP $code）。上の body を確認してください" ;;
+          esac
+          exit 1
