@@ -238,6 +238,13 @@ Could not access the repository. Please ensure you have access to it.
    （All repositories でも、Only select repositories でこのリポジトリだけでもよい）
 4. 一覧に出てきた `englishLearningApp` の **Import** を押す
 
+> **★「New Project / Cloning from GitHub」という画面に入ったら、それは別物。**
+> `Git Scope` と **`Private Repository Name`** の入力欄がある画面は
+> 「**テンプレートを複製して新しいリポジトリを作る**」フロー。
+> そのまま Create すると **別リポジトリが新規作成され、既存の `englishLearningApp` と切り離される**
+> （以後 `git push` しても反映されない）。
+> 画面下部の **「Import a different Git Repository →」** から入り直すこと。
+
 > Vercel Hobby は**private リポジトリでもデプロイできる**。公開する必要はない。
 
 #### 6.3 設定
