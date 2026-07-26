@@ -192,6 +192,19 @@ python3 migrate_to_supabase.py --data ../../local/data
 
 > データは `apps/local/data/` にある（`scripts/` から見て `../../local/data`）。
 
+**つまずきやすい点**
+
+| 症状 | 原因 | 対処 |
+|---|---|---|
+| `HTTP 404 PGRST125 Invalid path specified in request URL` | **`SUPABASE_URL` の末尾に `/` が付いている**（`//rest/v1/...` になる）。ダッシュボードからコピーすると付くことがある | 末尾の `/` を外す。スクリプト側でも自動で落とすようにした |
+| `HTTP 401` | Publishable（旧anon）キーを使っている | **Secret（旧service_role）キー**を使う |
+| `HTTP 404`（PGRST125以外） | テーブルが無い | マイグレーション3本を適用したか確認 |
+| `violates foreign key constraint` | `USER_ID` が実在しない | Authentication → Users の UID をコピーする |
+| 実施回数が倍になった | **`fails` / `practices` は冪等でない** | 先に消してから再実行する<br>`delete from practices where user_id='<UID>';`<br>`delete from fails where user_id='<UID>';` |
+
+> スクリプトは投入前に `fails` / `practices` の既存行を数え、**0でなければ止まる**。
+> 承知のうえで続けるときだけ `--force` を付ける。
+
 ### 6. デプロイ（Vercel Hobby）
 
 **`web/` をプロジェクトのルートディレクトリとして配置する。** 必要なファイルは同梱済み。
