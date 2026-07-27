@@ -127,8 +127,7 @@ def main():
         ("P-01", "行业", "háng yè", "行＝háng（xíng ではない）"),
         ("P-02", "银行", "yín háng", "行＝háng"),
         ("P-03", "供应链", "gōng yìng liàn", "应＝yìng（実データ最多の誤り42件）"),
-        ("P-04", "被视为人形机器人", "bèi shì wéi rén xíng jī qì rén",
-         "为＝wéi（実データ40件）。★短すぎる断片では pypinyin も誤るため実文脈で見る"),
+        ("P-04", "被视为人形机器人", "bèi shì wéi rén xíng jī qì rén", "为＝wéi（実データ40件）"),
         ("P-05", "重新", "chóng xīn", "重＝chóng"),
         ("P-06", "长期", "cháng qī", "长＝cháng"),
         ("P-07", "觉得", "jué de", "得＝de（軽声）"),
@@ -141,10 +140,26 @@ def main():
     for tid, text, expect, note in poly:
         H.check(tid, f"{text} → {note}", ruby(text), expect)
 
-    # ★ 限界の明示：語彙辞書に無い短い断片は今も誤る（文として渡せば正しい）
-    H.check("P-13", "既知の限界：「视为」単独では今も誤る（文脈があれば正しい）",
+    # 「视为」は pypinyin 標準では誤るが、補正辞書（pinyin_fixes.py）で直している
+    H.check("P-13", "「视为」は単独でも正しい（補正辞書で解決済み）",
             [ruby("视为"), ruby("被视为人形")],
-            ["shì wèi", "bèi shì wéi rén xíng"])
+            ["shì wéi", "bèi shì wéi rén xíng"])
+
+    # ---------- 補正辞書（pinyin_fixes.py） ----------
+    H.group("多音字：補正辞書")
+    import pinyin_fixes
+    H.check("P-30", "補正辞書の各語で、字数と要素数が一致している",
+            [w for w, r in pinyin_fixes.FIXES.items() if r and len(w) != len(r)], [])
+    fixed = [
+        ("P-31", "认为2026年", "rèn wéi èr líng èr liù nián", "为＝wéi（pypinyin標準で正しい）"),
+        ("P-32", "列为核心", "liè wéi hé xīn", "★補正辞書。標準では wèi になる"),
+        ("P-33", "华为主导", "huá wéi zhǔ dǎo", "★補正辞書。社名"),
+        ("P-34", "身为工程师", "shēn wéi gōng chéng shī", "★補正辞書"),
+        ("P-35", "因为车企", "yīn wèi chē qǐ", "因为は wèi のまま（壊していない）"),
+        ("P-36", "为了把", "wèi le bǎ", "为了は wèi のまま"),
+    ]
+    for tid, text, expect, note in fixed:
+        H.check(tid, f"{text} → {note}", ruby(text), expect)
 
     H.check("P-20", "数字と多音字が混ざっても長さが一致",
             len(server.to_pinyin_pairs("2026年，行业迈入15000台规模。")) == len("2026年，行业迈入15000台规模。"),

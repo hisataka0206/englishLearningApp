@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.38.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.38.1"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -788,9 +788,28 @@ def _ensure_pypinyin():
         return False
 
 
+_FIXES_LOADED = False
+
+
+def _load_pinyin_fixes():
+    """pypinyin の読み間違いの補正辞書を1度だけ読み込む（pinyin_fixes.py）。"""
+    global _FIXES_LOADED
+    if _FIXES_LOADED:
+        return
+    _FIXES_LOADED = True
+    try:
+        import pinyin_fixes
+        n = pinyin_fixes.apply()
+        if n:
+            print(f"[pinyin] 補正辞書 {n} 語を読み込みました")
+    except Exception as e:
+        print(f"[pinyin] 補正辞書の読み込みに失敗: {e}")
+
+
 def to_pinyin(text):
     if not text or not _ensure_pypinyin():
         return ""
+    _load_pinyin_fixes()
     from pypinyin import lazy_pinyin, Style
     return " ".join(lazy_pinyin(text, style=Style.TONE))
 
@@ -816,6 +835,8 @@ def to_pinyin_pairs(text):
     if not text:
         return []
     ok = _ensure_pypinyin()
+    if ok:
+        _load_pinyin_fixes()
     from pypinyin import pinyin, Style
     try:
         import number_reading
