@@ -29,6 +29,13 @@
 小数は「整数部を数として読む → 点 → 小数部は1桁ずつ」。
     1.5万  → yī diǎn wǔ wàn
     99.99% → bǎi fēn zhī jiǔ shí jiǔ diǎn jiǔ jiǔ
+
+記号（±・×・℃ など）
+----------
+数字に付く記号も中国語では読む。`SYMBOLS` を参照。
+    ±0.1毫米 → zhèng fù líng diǎn yī háo mǐ
+文脈で読みが変わる記号（× ~ など）は**数字に挟まれているときだけ**読む。
+そうしないと「视觉-语言」のようなラテン文脈の記号まで読んでしまう。
 """
 
 import re
@@ -45,6 +52,19 @@ POINT = "diǎn"
 
 NUM_RE = re.compile(r"[0-9]+(?:\.[0-9]+)?")
 LATIN = re.compile(r"[A-Za-z]")
+
+# 記号の読み。near_digit=True は「数字に挟まれているときだけ読む」。
+#   常に読む記号は、その字が出たら読みが一意に決まるものだけを入れる。
+SYMBOLS = {
+    "±": ("zhèng fù", False),      # 正负
+    "℃": ("shè shì dù", False),    # 摄氏度
+    "°": ("dù", False),            # 度
+    "≈": ("yuē děng yú", False),   # 约等于
+    "×": ("chéng", True),          # 乘（3×4）。品番の x とは別なので数字挟みに限る
+    "~": ("dào", True),            # 到（10~20）
+    "〜": ("dào", True),
+    "～": ("dào", True),
+}
 
 
 def _digitwise(digits):
@@ -166,4 +186,25 @@ def annotate(text):
             out[start + i] = p
         if percent:
             out[k] = ""            # 「%」自体は読まない（百分之を前に付けたため）
+
+    # 記号（±・℃ など）。数字の読みとは独立に付ける
+    for i, ch in enumerate(text):
+        if ch not in SYMBOLS:
+            continue
+        reading, near_digit = SYMBOLS[ch]
+        if near_digit and not _between_digits(text, i):
+            continue
+        out[i] = reading
     return out
+
+
+def _between_digits(text, i):
+    """記号 text[i] の前後が（空白を挟んで）数字かどうか。"""
+    j = i - 1
+    while j >= 0 and text[j] in " 　":
+        j -= 1
+    k = i + 1
+    while k < len(text) and text[k] in " 　":
+        k += 1
+    return (j >= 0 and text[j].isdigit()
+            and k < len(text) and text[k].isdigit())

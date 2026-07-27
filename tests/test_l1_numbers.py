@@ -93,6 +93,24 @@ def main():
     for tid, text, expect, note in ctx:
         H.check(tid, f"{text} … {note}", read(text), expect)
 
+    # ---------- 記号 ----------
+    H.group("記号：±・℃ など")
+    sym = [
+        ("N-80", "实现±0.1毫米", "zhèng fù líng diǎn yī", "★±＝正负"),
+        ("N-81", "温度25℃以上", "èr shí wǔ shè shì dù", "℃＝摄氏度"),
+        ("N-82", "角度是90°", "jiǔ shí dù", "°＝度"),
+        ("N-83", "大约≈5000台", "yuē děng yú wǔ qiān", "≈＝约等于"),
+        ("N-84", "10~20台", "shí dào èr shí", "~＝到（数字に挟まれている）"),
+        ("N-85", "3×4", "sān chéng sì", "×＝乘（数字に挟まれている）"),
+        ("N-86", "视觉-语言-动作", "", "★ラテン文脈の記号は読まない"),
+        ("N-87", "Pre-A+两轮", "", "★+は読まない（数字挟みでない）"),
+    ]
+    for tid, text, expect, note in sym:
+        H.check(tid, f"{text} … {note}", read(text), expect)
+
+    H.check("N-88", "★記号を足しても pairs の長さは原文と一致",
+            len(nr.annotate("实现±0.1毫米")) <= len("实现±0.1毫米"), True)
+
     # ---------- to_pinyin_pairs との統合 ----------
     H.group("数詞：pairs への統合（ci を壊さない）")
     import server
@@ -106,6 +124,7 @@ def main():
         "距离今年3月30日第10000台下线。",
         "成功率高达99.99%。",
         "2026年5月15日，超过250亿美元。",
+        "电池产线实现±0.1毫米高精度定位作业。",
     ]
     H.check("N-60", "★pairs の長さが原文の文字数と一致（ci が保たれる）",
             [len(server.to_pinyin_pairs(s)) == len(s) for s in samples],
