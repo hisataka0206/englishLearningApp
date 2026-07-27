@@ -16,6 +16,7 @@ sys.path.insert(0, HERE)
 
 LAYERS = [
     ("L1", "サーバー内部ロジック", "test_l1_server.py"),
+    ("L1", "算用数字の中国語読み", "test_l1_numbers.py"),
     ("L2", "クライアント分割ロジック", "test_l2_client.py"),
     ("L3", "HTTP API 契約", "test_l3_api.py"),
 ]

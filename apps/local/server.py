@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.37.1"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.38.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -795,23 +795,57 @@ def to_pinyin(text):
     return " ".join(lazy_pinyin(text, style=Style.TONE))
 
 
+# 漢字の連なり（この単位で pypinyin に渡すと多音字・変調が正しく出る）
+HAN_RUN = re.compile(r"[一-鿿]+")
+
 DIGIT_PY = {"0": "líng", "1": "yī", "2": "èr", "3": "sān", "4": "sì",
             "5": "wǔ", "6": "liù", "7": "qī", "8": "bā", "9": "jiǔ"}
 
 
 def to_pinyin_pairs(text):
     """各文字を [文字, その字の拼音] に対応付ける（1文字ずつ表示・選択用）。
-    漢字は拼音、算用数字は1文字ずつの読み（2→èr 等）、句読点・英字・空白は空。"""
+
+    漢字は拼音。**算用数字は中国語の数詞として読む**（number_reading.py）。
+    以前は1桁ずつ読んでいたが（15000 → yī wǔ líng líng líng）、
+    数量・日付では誤りなので改めた（→ yī wàn wǔ qiān）。
+    年号・型番・証券コードは従来どおり1桁ずつ。
+
+    **返り値の長さは text の長さと一致する。** 記事モードの1文字単位の
+    失敗記録（`ci`＝文字index）がこの並びに依存しているため、崩さない。
+    """
     if not text:
         return []
     ok = _ensure_pypinyin()
     from pypinyin import pinyin, Style
+    try:
+        import number_reading
+        num = number_reading.annotate(text)
+    except Exception as e:      # 数字の読みが壊れても本体は動かす
+        print(f"[to_pinyin_pairs] number_reading failed: {e}")
+        num = {}
+    # ★ 漢字は「連なりごと」に pypinyin へ渡す。1文字ずつ渡すと語彙辞書が
+    #   効かず、多音字を誤る（行业 → xíng yè。正しくは háng yè）。
+    #   「一」「不」の変調も文脈がないと反映されない。
+    py_map = {}
+    if ok:
+        for m in HAN_RUN.finditer(text):
+            run, base = m.group(), m.start()
+            res = pinyin(run, style=Style.TONE, errors="default")
+            if len(res) == len(run):          # 1文字＝1要素で返ったときだけ採用
+                for i, r in enumerate(res):
+                    py_map[base + i] = r[0] if r else ""
+            else:                             # 想定外の分割は1文字ずつに退避
+                for i, ch in enumerate(run):
+                    r = pinyin(ch, style=Style.TONE, errors="default")
+                    py_map[base + i] = r[0][0] if r and r[0] else ""
+
     pairs = []
-    for ch in text:
+    for i, ch in enumerate(text):
         if ok and "一" <= ch <= "鿿":
-            py = pinyin(ch, style=Style.TONE, errors="default")
-            pairs.append([ch, py[0][0] if py and py[0] else ""])
-        elif ch in DIGIT_PY:
+            pairs.append([ch, py_map.get(i, "")])
+        elif i in num:
+            pairs.append([ch, num[i]])
+        elif ch in DIGIT_PY:        # number_reading が拾わなかった数字の保険
             pairs.append([ch, DIGIT_PY[ch]])
         else:
             pairs.append([ch, ""])
