@@ -149,7 +149,7 @@ def main():
     H.group("多音字：補正辞書")
     import pinyin_fixes
     H.check("P-30", "補正辞書の各語で、字数と要素数が一致している",
-            [w for w, r in pinyin_fixes.FIXES.items() if r and len(w) != len(r)], [])
+            [w for w, r in pinyin_fixes.FIXES.items() if len(w) != len(r)], [])
     fixed = [
         ("P-31", "认为2026年", "rèn wéi èr líng èr liù nián", "为＝wéi（pypinyin標準で正しい）"),
         ("P-32", "列为核心", "liè wéi hé xīn", "★補正辞書。標準では wèi になる"),

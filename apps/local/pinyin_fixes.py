@@ -22,9 +22,7 @@ FIXES = {
     "列为": [["liè"], ["wéi"]],      # 〜に列せられる
     "身为": [["shēn"], ["wéi"]],     # 〜の身として
     "华为": [["huá"], ["wéi"]],      # ファーウェイ（社名）
-    "designed_placeholder": None,    # ← 削除しないこと（下で除去する目印）
 }
-FIXES.pop("designed_placeholder", None)
 
 
 def apply():
@@ -36,7 +34,7 @@ def apply():
     except ImportError:
         return 0
     try:
-        load_phrases_dict({k: v for k, v in FIXES.items() if v})
+        load_phrases_dict(FIXES)
         return len(FIXES)
     except Exception as e:
         print(f"[pinyin_fixes] load failed: {e}")
@@ -49,8 +47,6 @@ def self_check():
     apply()
     ng = 0
     for word, reading in FIXES.items():
-        if not reading:
-            continue
         if len(word) != len(reading):
             print(f"  ✗ {word}: 字数{len(word)} ≠ 要素数{len(reading)}")
             ng += 1
