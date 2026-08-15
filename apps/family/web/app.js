@@ -59,7 +59,7 @@ function pinyinPairs(text) {
 //   1漢字＝1チップに退化する。必ず segment() を使うこと。
 function zhWords(text) {
   try {
-    return segment(text).filter(Boolean);
+    return segment(text).filter(Boolean).map((w) => typeof w === "string" ? w : (w.origin ?? String(w)));
   } catch {
     return [];
   }
