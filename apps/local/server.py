@@ -84,6 +84,7 @@ def make_drive():
 DRIVE = make_drive()
 DATA_FILES = ["sentences.json", "words.json", "sentences.md", "words.md",
               "sentences_zh.json", "words_zh.json", "sentences_zh.md", "words_zh.md",
+              "sentences_ja.json", "words_ja.json",
               "articles_zh.json", "assessments.json"]
 
 try:
@@ -119,15 +120,19 @@ AZURE = make_azure()
 
 
 def sname(lang):
-    return "sentences_zh.json" if lang == "zh" else "sentences.json"
+    if lang == "zh": return "sentences_zh.json"
+    if lang == "ja": return "sentences_ja.json"
+    return "sentences.json"
 
 
 def wname(lang):
-    return "words_zh.json" if lang == "zh" else "words.json"
+    if lang == "zh": return "words_zh.json"
+    if lang == "ja": return "words_ja.json"
+    return "words.json"
 
 
-SENT_FILES = ["sentences.json", "sentences_zh.json"]
-WORD_FILES = ["words.json", "words_zh.json"]
+SENT_FILES = ["sentences.json", "sentences_zh.json", "sentences_ja.json"]
+WORD_FILES = ["words.json", "words_zh.json", "words_ja.json"]
 
 
 # ---------------------------------------------------------------- storage
@@ -735,6 +740,12 @@ Output ONLY the Chinese translation. No explanations, no quotes, no pinyin.
 
 Japanese text:
 """,
+    "ja": """Translate the Chinese text into natural Japanese.
+Keep it accurate and easy to understand.
+Output ONLY the Japanese translation. No explanations, no quotes, no pinyin.
+
+Chinese text:
+""",
 }
 
 KEYWORDS_PROMPTS = {
@@ -752,6 +763,13 @@ Rules:
 - "word" MUST be Chinese, copied exactly from the Chinese sentence.
 - "meaning" MUST be Japanese, copied from the original Japanese text below
   (the expression that corresponds to the word). Do NOT invent a new translation.
+Respond ONLY with JSON: {"keywords": [{"word": "...", "meaning": "..."}]}
+""",
+    "ja": """From the Chinese sentence below, pick up to 3 keywords/phrases
+worth memorizing for a Japanese learner.
+Rules:
+- "word" MUST be Chinese, copied exactly from the Chinese sentence.
+- "meaning" MUST be Japanese, copied from the Japanese translation text below.
 Respond ONLY with JSON: {"keywords": [{"word": "...", "meaning": "..."}]}
 """,
 }
@@ -1004,10 +1022,11 @@ def translate(japanese, model=None, lang="en"):
 
 def extract_keywords(english, japanese="", model=None, lang="en"):
     """Slow path: fetched by the UI in the background after translation."""
-    label = "Chinese" if lang == "zh" else "English"
+    label = "Chinese" if lang in ("zh", "ja") else "English"
+    ref_label = "Japanese translation text" if lang == "ja" else "Original Japanese text"
     prompt = (KEYWORDS_PROMPTS.get(lang, KEYWORDS_PROMPTS["en"])
               + f"\n{label} sentence:\n{english}\n"
-              + f"\nOriginal Japanese text:\n{japanese}\n")
+              + f"\n{ref_label}:\n{japanese}\n")
     content, err = chat(prompt, model, json_mode=True,
                         num_predict=400)
     if err:
@@ -1027,7 +1046,7 @@ def extract_keywords(english, japanese="", model=None, lang="en"):
         w = str(k.get("word", "")).strip()
         m = str(k.get("meaning", "")).strip()
         # LLMがword/meaningを取り違えた場合の補正（逆なら入れ替え、不正なら除外）
-        bad = _has_kana if lang == "zh" else _has_japanese  # zhは漢字OK・かなNG
+        bad = _has_kana if lang in ("zh", "ja") else _has_japanese  # zh/jaは漢字OK・かなNG
         if bad(w) and not bad(m):
             w, m = m, w
         if bad(w) or not w:

@@ -8,14 +8,23 @@ const LABELS = {
   en: {
     toBtn: "英語にする", transHead: "英訳 ✏️", sentTab: "英文のみ",
     sentCol: "英文 / 日本語", unit: "英文", delConfirm: "この英文を削除しますか？",
+    inputPlaceholder: "言いたいことを日本語で入力",
     restudy: "保存済みの英文を再学習中（区切りを編集して保存すると上書きされます）",
     sample: "This is the speaking speed.", ttsLang: "en-US", voicePref: "en", voiceRe: /Samantha/,
   },
   zh: {
     toBtn: "中国語にする", transHead: "中国語訳 ✏️", sentTab: "中国語のみ",
     sentCol: "中国語 / 日本語", unit: "文", delConfirm: "この文を削除しますか？",
+    inputPlaceholder: "言いたいことを日本語で入力",
     restudy: "保存済みの文を再学習中（区切りを編集して保存すると上書きされます）",
     sample: "这是朗读的速度。", ttsLang: "zh-CN", voicePref: "zh", voiceRe: /Ting|Tingting|Meijia|Sinji/,
+  },
+  ja: {
+    toBtn: "日本語に翻訳", transHead: "日本語訳", sentTab: "翻訳のみ",
+    sentCol: "日本語訳 / 中国語", unit: "文", delConfirm: "この翻訳を削除しますか？",
+    inputPlaceholder: "中国語テキストを入力",
+    restudy: "保存済みの翻訳を表示中",
+    sample: "", ttsLang: "ja-JP", voicePref: "ja", voiceRe: /Kyoko|Otoya/,
   },
 };
 const FAIL_LABELS = ["Fail"];        // 現行 config.json の fail_labels をクライアント定数へ
@@ -299,8 +308,13 @@ async function doTranslate() {
     $("kwActions").style.display = "none";
     msg("msgTr", "", true); msg("msgSave", "", true);
     $("btnSave").disabled = false;
-    playerLoad(d.target);
-    api("/api/keywords", { target: d.target, japanese: ja, lang }).then((k) => {
+    // ja モードは発声不要
+    if (lang !== "ja") playerLoad(d.target);
+    // ja モード: 中国語(ja)→日本語(d.target) のため target/japanese を入れ替えて渡す
+    const kwOpts = lang === "ja"
+      ? { target: ja, japanese: d.target, lang }
+      : { target: d.target, japanese: ja, lang };
+    api("/api/keywords", kwOpts).then((k) => {
       if (current.english !== d.target) return;
       current.keywords = k.keywords || [];
       renderKeywords();
@@ -455,9 +469,13 @@ async function study(id) {
   $("kwBox").innerHTML = "<span class='sub'>キーワード抽出中…</span>";
   $("kwActions").style.display = "none";
   window.scrollTo({ top: 0, behavior: "smooth" });
-  playerLoad(current.marked);
+  if (lang !== "ja") playerLoad(current.marked);
   api("/api/practice", { id }).then(loadHistory).catch(() => {});
-  api("/api/keywords", { target: s.english, japanese: s.japanese, lang })
+  // ja モード: 中国語(s.japanese)→日本語(s.english) のため target/japanese を入れ替えて渡す
+  const kwOpts = lang === "ja"
+    ? { target: s.japanese, japanese: s.english, lang }
+    : { target: s.english, japanese: s.japanese, lang };
+  api("/api/keywords", kwOpts)
     .then((k) => { current.keywords = k.keywords || []; renderKeywords(); })
     .catch(() => { $("kwBox").innerHTML = ""; });
 }
@@ -488,9 +506,15 @@ async function setLang(l) {
   localStorage.setItem("targetLang", lang);
   $("lang_en").classList.toggle("active", lang === "en");
   $("lang_zh").classList.toggle("active", lang === "zh");
+  $("lang_ja").classList.toggle("active", lang === "ja");
   $("btnTr").textContent = L().toBtn;
   $("transHead").textContent = L().transHead;
   $("tab_sent").textContent = L().sentTab;
+  $("ja").placeholder = L().inputPlaceholder;
+  // ja モードは発声・区切り不要 → ボタンを隠す
+  const jaMode = lang === "ja";
+  $("btnSpeak").style.display = jaMode ? "none" : "";
+  $("btnMainBreak").style.display = jaMode ? "none" : "";
   $("resultCard").style.display = "none";
   resetMainBreak(); playerClose();
   saveSetting({ default_lang: lang });
@@ -709,6 +733,7 @@ async function boot() {
   $("btnTr").onclick = doTranslate;
   $("lang_en").onclick = () => setLang("en");
   $("lang_zh").onclick = () => setLang("zh");
+  $("lang_ja").onclick = () => setLang("ja");
   $("sub_compose").onclick = () => go("/");
   $("sub_history").onclick = () => go("/history");
   $("english").oninput = (e) => englishEdited(e.target);

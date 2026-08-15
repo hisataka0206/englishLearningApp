@@ -18,6 +18,12 @@ Output ONLY the Chinese translation. No explanations, no quotes, no pinyin.
 
 Japanese text:
 `,
+  ja: `Translate the Chinese text into natural Japanese.
+Keep it accurate and easy to understand.
+Output ONLY the Japanese translation. No explanations, no quotes, no pinyin.
+
+Chinese text:
+`,
 };
 
 Deno.serve(async (req) => {

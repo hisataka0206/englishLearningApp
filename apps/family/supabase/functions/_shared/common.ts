@@ -129,7 +129,7 @@ export function clean(text: string) {
 /** 入力の共通バリデーション */
 export function validate(japanese: string, lang: string) {
   if (!japanese?.trim()) return fail("japanese is required", 400);
-  if (!["en", "zh"].includes(lang)) return fail("lang must be en or zh", 400);
+  if (!["en", "zh", "ja"].includes(lang)) return fail("lang must be en, zh, or ja", 400);
   if (japanese.length > MAX_INPUT_CHARS) return fail("入力が長すぎます", 413);
   return null;
 }

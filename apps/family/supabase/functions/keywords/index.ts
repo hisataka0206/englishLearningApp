@@ -3,12 +3,13 @@ import { CORS, ok, fail, getUser, admin, checkQuota, logUsage, callGemini, valid
   from "../_shared/common.ts";
 
 const PROMPT = (lang: string) => {
-  const L = lang === "zh" ? "Chinese" : "English";
+  const L = lang === "zh" || lang === "ja" ? "Chinese" : "English";
+  const refLabel = lang === "ja" ? "Japanese translation text" : "original Japanese text";
   return `From the ${L} sentence below, pick up to 3 keywords/phrases
 worth memorizing for a Japanese learner.
 Rules:
 - "word" MUST be ${L}, copied exactly from the ${L} sentence.
-- "meaning" MUST be Japanese, copied from the original Japanese text below
+- "meaning" MUST be Japanese, copied from the ${refLabel} below
   (the expression that corresponds to the word). Do NOT invent a new translation.
 Respond ONLY with JSON: {"keywords": [{"word": "...", "meaning": "..."}]}
 `;
@@ -19,7 +20,7 @@ const HAS_JAPANESE = /[぀-ヿ㐀-鿿]/;   // かな＋漢字
 const HAS_KANA = /[぀-ゟ゠-ヿ]/;       // かなのみ
 
 function fixPairs(list: Array<{ word?: string; meaning?: string }>, lang: string) {
-  const bad = (s: string) => (lang === "zh" ? HAS_KANA : HAS_JAPANESE).test(s ?? "");
+  const bad = (s: string) => (lang === "zh" || lang === "ja" ? HAS_KANA : HAS_JAPANESE).test(s ?? "");
   const out: Array<{ word: string; meaning: string }> = [];
   for (const k of list ?? []) {
     let w = (k?.word ?? "").trim();
@@ -53,7 +54,7 @@ Deno.serve(async (req) => {
   const quota = await checkQuota(sb, user.id, "keywords");
   if (!quota.allowed) return fail("今月の上限に達しました", 402);
 
-  const label = lang === "zh" ? "Chinese" : "English";
+  const label = lang === "zh" || lang === "ja" ? "Chinese" : "English";
   const prompt = `${PROMPT(lang)}
 ${label} sentence:
 ${target}
