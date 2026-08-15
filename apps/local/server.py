@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.38.2"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.39.1"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -36,6 +36,22 @@ ARTICLE_FAIL_LABELS = [
     {"code": "T", "name": "声調"},
     {"code": "N", "name": "数字2(两/二)"},
 ]
+
+# Failの記録範囲。本文（第N句）と重要語彙で idx の名前空間を分ける。
+FAIL_SCOPE_SENT = "s"
+FAIL_SCOPE_VOCAB = "v"
+
+
+def fail_scope(f):
+    """scopeを持たない旧データは本文として扱う。"""
+    return f.get("scope") or FAIL_SCOPE_SENT
+
+
+def fail_place(f):
+    """Notion「句」列の表記。本文は第N句、語彙は語彙。"""
+    if fail_scope(f) == FAIL_SCOPE_VOCAB:
+        return "語彙"
+    return f"第{f['idx']}句"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -393,12 +409,10 @@ def articles_refresh(limit=4):
         art["imported_at"] = now()
         art["fails"] = []  # [{idx, ci, char, syllable, label, time, pushed, sessioned}]
         art["sessions"] = []  # [{date, misses, total, nomiss}]
-        total = 0
         for s in art["sentences"]:
             s["pairs"] = to_pinyin_pairs(s["zh"])  # [文字, 拼音]の列（1文字表示用）
             s["breaks"] = []  # 節区切り位置（文字indexの後で区切る）
-            total += count_hanzi(s["zh"])
-        art["total_chars"] = total
+        art["total_chars"] = calc_total_chars(art)
         with LOCK:
             local = _articles()
             if art["notion_page_id"] not in {a["notion_page_id"] for a in local}:
@@ -551,25 +565,29 @@ def clear_assessments(lang=None):
     return {"deleted": len(items) - len(remain)}, None
 
 
-def article_fail(article_id, idx, ci, char="", syllable="", label="F"):
-    """記事の1文字に対するFailを記録/更新（同じ文字は上書き）。ci=文字index。"""
+def article_fail(article_id, idx, ci, char="", syllable="", label="F", scope=FAIL_SCOPE_SENT):
+    """記事の1文字に対するFailを記録/更新（同じ文字は上書き）。ci=文字index。
+
+    scope="s" は本文（idx=第N句）、scope="v" は重要語彙（idx=語彙の並び順）。
+    """
     if not article_id or idx is None or ci is None:
         return None, "article_id, idx, ci are required"
+    scope = scope if scope in (FAIL_SCOPE_SENT, FAIL_SCOPE_VOCAB) else FAIL_SCOPE_SENT
     with LOCK:
         arts = _articles()
         for a in arts:
             if a["id"] != article_id:
                 continue
             fails = a.setdefault("fails", [])
-            # 同じ(句,文字)が既にあればラベル更新、無ければ追加
+            # 同じ(範囲,句,文字)が既にあればラベル更新、無ければ追加
             for f in fails:
-                if f["idx"] == idx and f.get("ci") == ci:
+                if fail_scope(f) == scope and f["idx"] == idx and f.get("ci") == ci:
                     f["label"] = label
                     f["time"] = now()
                     f["pushed"] = False
                     break
             else:
-                fails.append({"idx": idx, "ci": ci, "char": char,
+                fails.append({"scope": scope, "idx": idx, "ci": ci, "char": char,
                               "syllable": syllable, "label": label,
                               "time": now(), "pushed": False, "sessioned": False})
             _save("articles_zh.json", arts)
@@ -579,14 +597,17 @@ def article_fail(article_id, idx, ci, char="", syllable="", label="F"):
     return None, "article not found"
 
 
-def article_unfail(article_id, idx, ci):
+def article_unfail(article_id, idx, ci, scope=FAIL_SCOPE_SENT):
+    scope = scope if scope in (FAIL_SCOPE_SENT, FAIL_SCOPE_VOCAB) else FAIL_SCOPE_SENT
     with LOCK:
         arts = _articles()
         for a in arts:
             if a["id"] != article_id:
                 continue
             fails = a.get("fails", [])
-            a["fails"] = [f for f in fails if not (f["idx"] == idx and f.get("ci") == ci)]
+            a["fails"] = [f for f in fails
+                          if not (fail_scope(f) == scope and f["idx"] == idx
+                                  and f.get("ci") == ci)]
             _save("articles_zh.json", arts)
             drive_push_async()
             return {"pending_fails": sum(1 for f in a["fails"] if not f.get("pushed"))}, None
@@ -616,7 +637,9 @@ def article_session(article_id):
         for a in arts:
             if a["id"] != article_id:
                 continue
-            total = a.get("total_chars", 0) or 1
+            # 語彙もミス登録の対象になったため、旧記事は分母を取り直す
+            a["total_chars"] = calc_total_chars(a) or a.get("total_chars", 0)
+            total = a["total_chars"] or 1
             new = [f for f in a.get("fails", []) if not f.get("sessioned")]
             misses = len(new)
             for f in new:
@@ -643,7 +666,7 @@ def article_push_fails(article_id):
         pending = [f for f in art.get("fails", []) if not f.get("pushed")]
         if not pending:
             return {"pushed": 0}, None
-        rows = [[f["time"][:10], f"第{f['idx']}句", f.get("char", ""),
+        rows = [[f["time"][:10], fail_place(f), f.get("char", ""),
                  f.get("syllable", ""), f.get("label", "F")] for f in pending]
         page_id = art["notion_page_id"]
         table_id = art.get("notion_fail_table_id")
@@ -875,6 +898,12 @@ def to_pinyin_pairs(text):
 
 def count_hanzi(text):
     return sum(1 for ch in (text or "") if "一" <= ch <= "鿿")
+
+
+def calc_total_chars(art):
+    """Nomiss率の分母。本文＋重要語彙の漢字数（どちらもミス登録できるため）。"""
+    return (sum(count_hanzi(s.get("zh")) for s in art.get("sentences", []))
+            + sum(count_hanzi(v.get("zh")) for v in art.get("vocab", [])))
 
 
 _jieba_tried = False
@@ -1249,10 +1278,12 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/articles/fail":
             data, err = article_fail(body.get("article_id"), body.get("idx"),
                                      body.get("ci"), body.get("char", ""),
-                                     body.get("syllable", ""), body.get("label", "F"))
+                                     body.get("syllable", ""), body.get("label", "F"),
+                                     body.get("scope", FAIL_SCOPE_SENT))
         elif self.path == "/api/articles/unfail":
             data, err = article_unfail(body.get("article_id"), body.get("idx"),
-                                       body.get("ci"))
+                                       body.get("ci"),
+                                       body.get("scope", FAIL_SCOPE_SENT))
         elif self.path == "/api/articles/breaks":
             data, err = article_set_breaks(body.get("article_id"), body.get("idx"),
                                            body.get("breaks", []))

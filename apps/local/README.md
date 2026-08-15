@@ -33,6 +33,14 @@
 
 失敗履歴は英文ごとに「Fail＋日時」で蓄積され、`sentences.md` にも一覧表示されます（ラベルを増やしたい場合は `config.json` の `fail_labels` に追加）。
 
+## [[記事モード]]のミス登録（中国語）
+
+[[Notion]]から取り込んだ記事は、**本文と重要語彙のどちらも1文字単位でミスを登録できます**（v1.39.0〜）。漢字を長押し（PCは右クリック）してラベルを選択、タップは発音。ラベルは `server.py` の `ARTICLE_FAIL_LABELS`（F=基本 / R=声母・翘舌 / V=韻母 / T=声調 / N=数字2）。
+
+- ミスは `articles_zh.json` の `fails` に `{scope, idx, ci, char, syllable, label}` で記録されます。`scope` は `"s"`=本文（`idx`=第N句）／`"v"`=重要語彙（`idx`=語彙の並び順）。`scope` の無い旧データは本文として読まれます。
+- 「勉強完了」の[[Nomiss率]]は **本文＋重要語彙の漢字数**が分母。旧記事も完了時に分母を取り直します。
+- Notionへの書き戻しは記事末尾の「失敗履歴」テーブル（`日付 / 句 / 漢字 / 拼音 / ラベル`）。語彙のミスは「句」列が `語彙` になります。
+
 ## 初回セットアップ（1回だけ。以後ユーザーは何も意識しない運用）
 
 ### Mac側
@@ -70,3 +78,5 @@
 - `POST /api/fail` — `{id, label}` 失敗履歴を追記
 - `POST /api/practice` — `{id}` [[実施日]]を自動記録（一覧の🔊タップで発動）
 - `POST /api/delete` — `{id}` 英文を削除
+- `POST /api/articles/fail` — `{article_id, scope, idx, ci, char, syllable, label}` 記事のミスを登録／上書き（`scope` 省略時は本文 `"s"`）
+- `POST /api/articles/unfail` — `{article_id, scope, idx, ci}` 記事のミスを取消

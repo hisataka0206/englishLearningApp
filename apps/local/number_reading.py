@@ -56,6 +56,8 @@ LATIN = re.compile(r"[A-Za-z]")
 # 記号の読み。near_digit=True は「数字に挟まれているときだけ読む」。
 #   常に読む記号は、その字が出たら読みが一意に決まるものだけを入れる。
 SYMBOLS = {
+    "+": ("jiā", False),           # 加（脑+体・5G+AI）。漢字に挟まれる用例が主なので常に読む
+    "＋": ("jiā", False),
     "±": ("zhèng fù", False),      # 正负
     "℃": ("shè shì dù", False),    # 摄氏度
     "°": ("dù", False),            # 度

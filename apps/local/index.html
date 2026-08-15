@@ -51,6 +51,9 @@
   .cchar .hz { font-size:22px; line-height:1.25; }
   .cchar.failed .hz { color:var(--ng); }
   .cchar.failed .lb { font-size:9px; color:var(--ng); line-height:1; }
+  /* 重要語彙：本文より少し小さいマス目で1文字ずつミス登録できる */
+  .cgrid.vocabgrid { display:inline-flex; flex-wrap:nowrap; margin:0; vertical-align:middle; }
+  .cgrid.vocabgrid .cchar .hz { font-size:19px; }
   .cgap { width:3px; align-self:stretch; border-radius:3px; margin:0 1px; }
   .cgap.brk { width:3px; background:var(--accent); }
   /* 区切り編集モード：文字間のタップ領域を大きくして押しやすく */
@@ -900,7 +903,7 @@ function setTab(t) {
   renderHistory();
 }
 
-function esc(s) { return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
 
 function sentTable(list, withDate) {
   if (!list.length) return "";
@@ -1032,13 +1035,30 @@ function closeArticle() {
   loadArticles();
 }
 
-function failKey(idx, ci) { return idx + "|" + ci; }
+// scope: "s"=本文 / "v"=重要語彙。idxの名前空間が別なのでキーに含める
+function failKey(scope, idx, ci) { return (scope || "s") + "|" + idx + "|" + ci; }
+function failMap(scope) {
+  const m = {};
+  (curArticle.fails || []).forEach(f => {
+    if ((f.scope || "s") === scope) m[failKey(scope, f.idx, f.ci)] = f.label;
+  });
+  return m;
+}
+
+// 1文字ぶんのマス目。本文・語彙で共通
+function charCellHTML(scope, idx, ci, ch, py, label, selectable) {
+  const cls = "cchar" + (label ? " failed" : "");
+  const safe = ch.replace(/'/g, "\\'");
+  return `<span class="${cls}" data-scope="${scope}" data-idx="${idx}" data-ci="${ci}"
+      data-ch="${esc(ch)}" data-py="${esc(py)}"
+      ${selectable ? `onclick="charTap('${safe}')" oncontextmenu="return charMenu(event)"` : ""}>
+      <span class="py">${esc(py)}</span><span class="hz">${esc(ch)}</span>${label ? `<span class="lb">${label}</span>` : ""}</span>`;
+}
 
 function renderArtSentences() {
   const box = document.getElementById("artSentences");
   box.innerHTML = "";
-  const fmap = {};
-  (curArticle.fails || []).forEach(f => { fmap[failKey(f.idx, f.ci)] = f.label; });
+  const fmap = failMap("s");
   curArticle.sentences.forEach(s => {
     const d = document.createElement("div");
     d.className = "asent";
@@ -1050,12 +1070,7 @@ function renderArtSentences() {
       const selectable = !!py && !breakEditMode;  // 通常時のみ発音・ミス記録
       // 文字の前の区切りギャップ（先頭以外）。編集モードのみタップ可
       if (ci > 0) grid += `<span class="cgap${breaks.has(ci - 1) ? " brk" : ""}" ${breakEditMode ? `onclick="toggleBreak(${s.idx},${ci - 1})"` : ""}></span>`;
-      const lb = fmap[failKey(s.idx, ci)];
-      const cls = "cchar" + (lb ? " failed" : "");
-      const safe = ch.replace(/'/g, "\\'");
-      grid += `<span class="${cls}" data-idx="${s.idx}" data-ci="${ci}" data-ch="${esc(ch)}" data-py="${esc(py)}"
-        ${selectable ? `onclick="charTap('${safe}')" oncontextmenu="return charMenu(event,${s.idx},${ci})"` : ""}>
-        <span class="py">${esc(py)}</span><span class="hz">${esc(ch)}</span>${lb ? `<span class="lb">${lb}</span>` : ""}</span>`;
+      grid += charCellHTML("s", s.idx, ci, ch, py, fmap[failKey("s", s.idx, ci)], selectable);
     });
     grid += "</div>";
     d.innerHTML = grid +
@@ -1318,7 +1333,7 @@ function attachLongPress(el) {
   el.addEventListener("touchmove", cancel);
 }
 
-function charMenu(ev, idx, ci) {  // PC: 右クリック
+function charMenu(ev) {  // PC: 右クリック
   ev.preventDefault();
   openFailMenu(ev.currentTarget);
   return false;
@@ -1327,13 +1342,17 @@ function charMenu(ev, idx, ci) {  // PC: 右クリック
 let failLabelsZh = [{ code: "F", name: "Fail" }];
 
 function openFailMenu(el) {
+  const scope = el.dataset.scope || "s";
   const idx = +el.dataset.idx, ci = +el.dataset.ci, ch = el.dataset.ch, py = el.dataset.py;
   const pop = document.getElementById("failPop");
-  document.getElementById("failPopChar").textContent = `${ch}  ${py}`;
-  const already = (curArticle.fails || []).some(f => f.idx === idx && f.ci === ci);
+  const where = scope === "v" ? "語彙" : `第${idx}句`;
+  document.getElementById("failPopChar").textContent = `${ch}  ${py}（${where}）`;
+  const already = (curArticle.fails || []).some(
+    f => (f.scope || "s") === scope && f.idx === idx && f.ci === ci);
+  const args = `'${scope}',${idx},${ci}`;
   let btns = failLabelsZh.map(l =>
-    `<button class="fbtn" title="${esc(l.name)}" onclick="setCharFail(${idx},${ci},'${ch.replace(/'/g,"\\'")}','${py.replace(/'/g,"\\'")}','${l.code}')"><b>${l.code}</b> ${esc(l.name)}</button>`).join("");
-  if (already) btns += `<button class="fbtn rm" onclick="removeCharFail(${idx},${ci})">✕ 取消</button>`;
+    `<button class="fbtn" title="${esc(l.name)}" onclick="setCharFail(${args},'${ch.replace(/'/g,"\\'")}','${py.replace(/'/g,"\\'")}','${l.code}')"><b>${l.code}</b> ${esc(l.name)}</button>`).join("");
+  if (already) btns += `<button class="fbtn rm" onclick="removeCharFail(${args})">✕ 取消</button>`;
   document.getElementById("failPopBtns").innerHTML = btns;
   // 位置：文字の近く
   const r = el.getBoundingClientRect();
@@ -1352,23 +1371,32 @@ document.addEventListener("click", (e) => {
     closeFailMenu();
 });
 
-async function setCharFail(idx, ci, ch, py, label) {
+function dropFail(scope, idx, ci) {
+  curArticle.fails = (curArticle.fails || []).filter(
+    f => !((f.scope || "s") === scope && f.idx === idx && f.ci === ci));
+}
+
+function renderArtScope(scope) {
+  if (scope === "v") renderArtVocab(); else renderArtSentences();
+}
+
+async function setCharFail(scope, idx, ci, ch, py, label) {
   closeFailMenu();
   try {
-    const d = await api("/api/articles/fail", { article_id: curArticle.id, idx, ci, char: ch, syllable: py, label });
-    curArticle.fails = (curArticle.fails || []).filter(f => !(f.idx === idx && f.ci === ci));
-    curArticle.fails.push({ idx, ci, char: ch, syllable: py, label, pushed: false });
-    renderArtSentences();
+    const d = await api("/api/articles/fail", { article_id: curArticle.id, scope, idx, ci, char: ch, syllable: py, label });
+    dropFail(scope, idx, ci);
+    curArticle.fails.push({ scope, idx, ci, char: ch, syllable: py, label, pushed: false });
+    renderArtScope(scope);
     updatePending(d.pending_fails);
   } catch(e) { alert(e.message); }
 }
 
-async function removeCharFail(idx, ci) {
+async function removeCharFail(scope, idx, ci) {
   closeFailMenu();
   try {
-    const d = await api("/api/articles/unfail", { article_id: curArticle.id, idx, ci });
-    curArticle.fails = (curArticle.fails || []).filter(f => !(f.idx === idx && f.ci === ci));
-    renderArtSentences();
+    const d = await api("/api/articles/unfail", { article_id: curArticle.id, scope, idx, ci });
+    dropFail(scope, idx, ci);
+    renderArtScope(scope);
     updatePending(d.pending_fails);
   } catch(e) { alert(e.message); }
 }
@@ -1383,13 +1411,23 @@ function rubyHTML(pairs, zh) {
 function renderArtVocab() {
   const box = document.getElementById("artVocab");
   if (!curArticle.vocab || !curArticle.vocab.length) { box.innerHTML = "（なし）"; return; }
+  const fmap = failMap("v");
   let h = `<table class="htable"><tr><th>語</th><th>日本語</th></tr>`;
-  curArticle.vocab.forEach(v => {
-    h += `<tr><td><span style="font-size:19px">${rubyHTML(v.pairs, v.zh)}</span>
+  curArticle.vocab.forEach((v, vi) => {
+    const pairs = v.pairs || (v.zh || "").split("").map(c => [c, ""]);
+    let grid = `<div class="cgrid vocabgrid">`;
+    pairs.forEach((p, ci) => {
+      const [ch, py] = p;
+      grid += charCellHTML("v", vi, ci, ch, py, fmap[failKey("v", vi, ci)], !!py);
+    });
+    grid += "</div>";
+    h += `<tr><td>${grid}
       <button class="icon" onclick="speak('${(v.zh||'').replace(/'/g,"\\'")}')">🔊</button></td>
       <td>${esc(v.ja)}</td></tr>`;
   });
   box.innerHTML = h + "</table>";
+  // 長押し（モバイル）でミス記録メニュー。本文と同じ操作
+  box.querySelectorAll(".cchar").forEach(el => attachLongPress(el));
 }
 
 function updatePending(n) {

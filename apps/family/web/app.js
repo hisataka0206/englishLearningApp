@@ -29,7 +29,7 @@ let profile = null;
 
 const L = () => LABELS[lang] || LABELS.en;
 const $ = (id) => document.getElementById(id);
-const esc = (s) => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
+const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
 function msg(id, text, ok) {
   const el = $(id); if (!el) return;
