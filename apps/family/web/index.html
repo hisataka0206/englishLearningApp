@@ -109,9 +109,9 @@
 <!-- ============================================ メイン -->
 <div id="viewMain" style="display:none">
   <div class="langsel">
-    <button id="lang_en">🇺🇸 英語</button>
-    <button id="lang_zh">🇨🇳 中国語</button>
-    <button id="lang_ja">🇯🇵 日本語</button>
+    <button id="lang_en">🇺🇸 日⇨英</button>
+    <button id="lang_zh">🇨🇳 日⇨中</button>
+    <button id="lang_ja">🇯🇵 中⇨日</button>
   </div>
   <div class="row" style="margin-bottom:10px">
     <button class="tab small active" id="sub_compose">作成</button>
@@ -121,7 +121,10 @@
   <div id="subCompose">
     <div class="card">
       <textarea id="ja" placeholder="言いたいことを日本語で入力"></textarea>
-      <div class="row"><button class="primary" id="btnTr">英語にする</button></div>
+      <div class="row">
+        <button class="primary" id="btnTr">英語にする</button>
+        <button class="ghost" id="btnNew" title="入力をクリアして新しい文を書く">🔄 新規</button>
+      </div>
       <div class="msg" id="msgTr"></div>
     </div>
 

@@ -288,6 +288,7 @@ function toggleMainBreak(pos) {
   current.marked = buildMainMarked();
   renderMainBreakGrid();
   playerSync();
+  scheduleAutoSave();  // 区切りの変更も同じIDに上書き保存
 }
 
 // ============================================================ 作文
@@ -308,6 +309,8 @@ async function doTranslate() {
     $("kwActions").style.display = "none";
     msg("msgTr", "", true); msg("msgSave", "", true);
     $("btnSave").disabled = false;
+    // 翻訳できた時点で即保存してIDを採番する（以降の編集は同じIDに上書き）
+    await saveSentence();
     // ja モードは発声不要
     if (lang !== "ja") playerLoad(d.target);
     // ja モード: 中国語(ja)→日本語(d.target) のため target/japanese を入れ替えて渡す
@@ -346,6 +349,30 @@ function englishEdited(el) {
   $("btnSave").disabled = false;
   playerSync();
   if (lang === "zh") $("pinyin").textContent = pinyinOf(current.english);
+  scheduleAutoSave();  // 同じIDに上書き保存
+}
+
+// 編集したら少し待って同じIDに上書き保存する（連続入力で叩かないようデバウンス）
+let autoSaveTimer = null;
+function scheduleAutoSave() {
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => { if (current.english) saveSentence(); }, 1500);
+}
+
+// 入力・結果・IDをすべて捨てて、新しい文を書き始める
+function clearCompose() {
+  clearTimeout(autoSaveTimer);
+  current = { japanese: "", english: "", marked: "", keywords: [], pageId: null, _breaks: null };
+  $("ja").value = "";
+  $("english").textContent = "";
+  $("pinyin").textContent = "";
+  $("kwBox").innerHTML = "";
+  $("kwActions").style.display = "none";
+  $("resultCard").style.display = "none";
+  msg("msgTr", "", true); msg("msgSave", "", true);
+  resetMainBreak();
+  playerClose();
+  $("ja").focus();
 }
 
 async function saveSentence() {
@@ -515,6 +542,10 @@ async function setLang(l) {
   const jaMode = lang === "ja";
   $("btnSpeak").style.display = jaMode ? "none" : "";
   $("btnMainBreak").style.display = jaMode ? "none" : "";
+  // 言語を変えたら前の結果は破棄する（保留中の自動保存が新しい lang で走らないよう止める）
+  clearTimeout(autoSaveTimer);
+  current = { japanese: "", english: "", marked: "", keywords: [], pageId: null, _breaks: null };
+  $("ja").value = "";
   $("resultCard").style.display = "none";
   resetMainBreak(); playerClose();
   saveSetting({ default_lang: lang });
@@ -739,6 +770,7 @@ async function boot() {
   $("english").oninput = (e) => englishEdited(e.target);
   $("btnSpeak").onclick = () => playerLoad(current.marked || current.english);
   $("btnMainBreak").onclick = toggleMainBreakEdit;
+  $("btnNew").onclick = clearCompose;
   $("btnSave").onclick = saveSentence;
   $("btnWords").onclick = saveWords;
   $("hFilter").oninput = renderHistory;
