@@ -102,9 +102,9 @@
 <main>
 <div id="viewMain">
   <div class="langsel">
-    <button id="lang_en" onclick="setLang('en')">🇺🇸 英語</button>
-    <button id="lang_zh" onclick="setLang('zh')">🇨🇳 中国語</button>
-    <button id="lang_ja" onclick="setLang('ja')">🇯🇵 日本語</button>
+    <button id="lang_en" onclick="setLang('en')">🇺🇸 日⇨英</button>
+    <button id="lang_zh" onclick="setLang('zh')">🇨🇳 日⇨中</button>
+    <button id="lang_ja" onclick="setLang('ja')">🇯🇵 中⇨日</button>
   </div>
   <div class="row" style="margin-bottom:10px">
     <button class="tab small active" id="sub_compose" onclick="setSub('compose')">作成</button>
@@ -115,6 +115,7 @@
     <textarea id="ja" placeholder="言いたいことを日本語で入力"></textarea>
     <div class="row">
       <button class="primary" id="btnTr" onclick="doTranslate()">英語にする</button>
+      <button class="ghost" id="btnNew" onclick="clearCompose()" title="入力をクリアして新しい文を書く">🔄 新規</button>
       <select id="model" title="翻訳モデル"></select>
     </div>
     <div class="msg" id="msgTr"></div>
@@ -286,7 +287,11 @@ function setLang(l) {
   const jaMode = lang === "ja";
   document.getElementById("btnSpeak").style.display = jaMode ? "none" : "";
   document.getElementById("btnMainBreak").style.display = jaMode ? "none" : "";
-  document.getElementById("resultCard").style.display = "none";  // 前の言語の結果をクリア
+  // 前の言語の結果をクリア（保留中の自動保存が新しい lang で走らないよう止める）
+  clearTimeout(autoSaveTimer);
+  current = { japanese:"", english:"", marked:"", keywords:[], pageId:null };
+  document.getElementById("ja").value = "";
+  document.getElementById("resultCard").style.display = "none";
   resetMainBreak();
   playerClose();
   loadHistory();  // 履歴もその言語のものに切替
@@ -506,6 +511,7 @@ function englishEdited(el) {
   document.getElementById("btnSave").disabled = false;  // 編集したら保存可能に（呼び出し中は上書き）
   playerSync();  // 区切りの変更を練習ウィンドウに即反映
   refreshPinyin();
+  scheduleAutoSave();  // 同じIDに上書き保存
 }
 
 // ---- 区切り編集モード（自分の文側。記事と同じすき間タップ方式） ----
@@ -593,6 +599,7 @@ function toggleMainBreak(pos) {
   current.marked = buildMainMarked();
   renderMainBreakGrid();
   playerSync();
+  scheduleAutoSave();  // 区切りの変更も同じIDに上書き保存
 }
 
 let pinyinTimer = null;
@@ -718,6 +725,8 @@ async function doTranslate() {
     document.getElementById("kwActions").style.display = "none";
     msg("msgTr", "", true); msg("msgSave", "", true);
     document.getElementById("btnSave").disabled = false;
+    // 翻訳できた時点で即保存してIDを採番する（以降の編集は同じIDに上書き）
+    await saveSentence();
     // ja モードは発声不要
     if (lang !== "ja") playerLoad(d.english);
     // ja モード: 中国語(ja)→日本語(d.english) のため english/japanese を入れ替えて渡す
@@ -758,6 +767,29 @@ async function saveSentence() {
     msg("msgSave", d.updated ? "上書き保存しました（区切り位置を更新）" : "Google Driveに保存しました", true);
     loadHistory();
   } catch(e) { msg("msgSave", e.message, false); btn.disabled = false; }
+}
+
+// 編集したら少し待って同じIDに上書き保存する（連打・連続入力で叩かないようデバウンス）
+let autoSaveTimer = null;
+function scheduleAutoSave() {
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => { if (current.english) saveSentence(); }, 1500);
+}
+
+// 入力・結果・IDをすべて捨てて、新しい文を書き始める
+function clearCompose() {
+  clearTimeout(autoSaveTimer);
+  current = { japanese:"", english:"", marked:"", keywords:[], pageId:null };
+  document.getElementById("ja").value = "";
+  document.getElementById("english").textContent = "";
+  document.getElementById("pinyin").textContent = "";
+  document.getElementById("kwBox").innerHTML = "";
+  document.getElementById("kwActions").style.display = "none";
+  document.getElementById("resultCard").style.display = "none";
+  msg("msgTr", "", true); msg("msgSave", "", true);
+  resetMainBreak();
+  playerClose();
+  document.getElementById("ja").focus();
 }
 
 async function saveWords() {
