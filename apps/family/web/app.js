@@ -65,14 +65,46 @@ function pinyinPairs(text) {
 
 // ★ 词（単語）レベルの分かち書き。現行アプリのサーバー側 jieba に相当する
 //   （current-app-spec.md §3.3・§7 #43.5）。
-//   pinyin({type:"all"}) は「1文字ずつ」返すため、これを使うと fine が
-//   1漢字＝1チップに退化する。必ず segment() を使うこと。
-function zhWords(text) {
-  try {
-    return segment(text).filter(Boolean).map((w) => typeof w === "string" ? w : (w.origin ?? String(w)));
-  } catch {
-    return [];
+//   pinyin({type:"all"}) も pinyin-pro の segment() も実データでは
+//   98% が1文字に割れてしまい（充电器 → 充/电/器）、fine が
+//   1漢字＝1チップに退化していた。ブラウザ内蔵の Intl.Segmenter を主に使う。
+//   Intl.Segmenter でも割れてしまう固有語だけ、優先辞書で先に取り出す。
+//   （辞書は 2026-08 の深圳渡航時の履歴68文から抽出）
+const ZH_DICT = [
+  "人形机器人", "康复机器人", "汤浅文贵", "出口手续", "二次开发", "凯宾斯基",
+  "机器人", "充电器", "航站楼", "价钱表", "生产线", "华强北", "普锐斯",
+  "微信", "入住", "听懂", "联赛",
+].sort((a, b) => b.length - a.length);
+
+let zhSegmenter;
+function zhBaseWords(text) {
+  if (zhSegmenter === undefined) {
+    try { zhSegmenter = new Intl.Segmenter("zh-CN", { granularity: "word" }); }
+    catch (e) { zhSegmenter = null; }
   }
+  if (zhSegmenter) {
+    return Array.from(zhSegmenter.segment(text), (x) => x.segment).filter((t) => t.trim());
+  }
+  try {   // Intl.Segmenter が無い環境（古いブラウザ）向けの退避
+    return segment(text).filter(Boolean).map((w) => typeof w === "string" ? w : (w.origin ?? String(w)));
+  } catch (e) {
+    return Array.from(text);
+  }
+}
+
+function zhWords(text) {
+  const s = String(text == null ? "" : text);
+  const out = [];
+  let i = 0;
+  while (i < s.length) {
+    const hit = ZH_DICT.find((w) => s.startsWith(w, i));
+    if (hit) { out.push(hit); i += hit.length; continue; }
+    let j = i + 1;                                   // 次の辞書語の手前まで
+    while (j < s.length && !ZH_DICT.some((w) => s.startsWith(w, j))) j++;
+    out.push(...zhBaseWords(s.slice(i, j)));
+    i = j;
+  }
+  return out.filter(Boolean);
 }
 
 // ============================================================ 発音（Web Speech API）
@@ -108,8 +140,8 @@ function unlockSpeech() {           // iOS は setTimeout 経由の speak が無
 function unitsHTML(text) {
   const s = String(text == null ? "" : text);
   if (lang === "zh") {
-    return Array.from(s).map((ch) =>
-      isHan(ch) ? `<span class="u" data-u="${escA(ch)}">${esc(ch)}</span>` : esc(ch)).join("");
+    return zhWords(s).map((w) =>
+      isHan(w[0]) ? `<span class="u" data-u="${escA(w)}">${esc(w)}</span>` : esc(w)).join("");
   }
   return s.split(/(\s+)/).map((t) => {
     if (!t || /^\s+$/.test(t)) return esc(t);
