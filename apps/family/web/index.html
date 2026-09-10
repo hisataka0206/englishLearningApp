@@ -62,10 +62,10 @@
   .chip.active { background:var(--accent); color:#fff; }
   .chip.done { background:#d7e3ff; }
   .chip .cpy { font-size:10px; opacity:.7; }
-  .chip .u { display:inline-block; border-radius:6px; padding:0 1px;
+  .u { display:inline-block; border-radius:6px; padding:0 1px;
     -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;
     touch-action:manipulation; transition:background-color .12s ease; }
-  .chip .u.saying { background:#ffd76b; color:#222; }
+  .u.saying { background:#ffd76b; color:#222; }
   #btnRec.recording { background:var(--ng); color:#fff; }
   ruby rt { font-size:.55em; color:var(--accent); }
   .cgrid { display:flex; flex-wrap:wrap; align-items:flex-end; margin:4px 0 6px; }
@@ -80,6 +80,20 @@
   .cgrid.editbreaks .cgap.brk { background:var(--accent); }
   .cgrid.editbreaks .cgap.brk::after { content:"✂"; color:#fff; font-size:11px; }
   .cgrid.editbreaks .cchar { opacity:.75; }
+  .dlgitem { padding:11px 4px; border-bottom:1px solid #f0f1f5; cursor:pointer; }
+  .dlgitem:last-child { border-bottom:0; }
+  .turn { display:flex; margin:7px 0; }
+  .turn.me { justify-content:flex-end; }
+  .turn .bub { max-width:88%; background:#fff; border-radius:14px; padding:9px 12px;
+    box-shadow:0 1px 3px rgba(0,0,0,.07); }
+  .turn.me .bub { background:#e8edff; }
+  .turn.now .bub { outline:2px solid var(--accent); }
+  .turn .zh { font-size:18px; line-height:1.65; }
+  .turn .py, .turn .ja { font-size:12px; margin-top:3px; }
+  .turn .masked { filter:blur(6px); cursor:pointer; }
+  .turn .tacts { display:flex; gap:6px; margin-top:7px; }
+  .turn .ares:not(:empty) { margin-top:7px; }
+  .icon.recording { background:var(--ng); color:#fff; }
   .loginbox { max-width:340px; margin:12vh auto; }
 </style>
 </head>
@@ -88,6 +102,7 @@
 <header id="appHeader" style="display:none">English Learning
   <div style="display:flex;align-items:center;gap:8px">
     <span id="who" style="font-size:12px;font-weight:400;opacity:.9"></span>
+    <button class="navb" id="navDialog">💬</button>
     <button class="navb" id="navHistory">📜</button>
     <button class="navb" id="navRecord">📊</button>
     <button class="navb" id="navSettings">⚙</button>
@@ -176,6 +191,24 @@
     <button class="small ghost" id="btnClearRec" style="margin-left:auto">🗑</button>
   </div>
   <div class="card"><div id="recordBody">読み込み中…</div></div>
+</div>
+
+<!-- ============================================ 会話練習（ロールプレイ） -->
+<div id="viewDialog" style="display:none">
+  <div id="dlgList"></div>
+  <div id="dlgRoom" style="display:none">
+    <div class="card">
+      <h2><button class="small ghost" id="dlgBack">←</button> <span id="dlgTitle"></span></h2>
+      <div class="row" style="margin-top:4px">
+        <button class="tab small active" id="dlgHide">🙈 自分</button>
+        <button class="tab small active" id="dlgPy">拼音</button>
+        <button class="tab small active" id="dlgJa">🇯🇵</button>
+        <button class="ghost small" id="dlgPlayAll" style="margin-left:auto">▶ 通し再生</button>
+      </div>
+    </div>
+    <div id="dlgTurns"></div>
+    <div class="card"><h2>語彙</h2><div id="dlgVocab"></div></div>
+  </div>
 </div>
 
 <!-- ============================================ 設定 -->

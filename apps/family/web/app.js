@@ -108,12 +108,13 @@ function zhWords(text) {
 }
 
 // ============================================================ 発音（Web Speech API）
-function makeUtter(text) {
+function makeUtter(text, lg) {
+  const LL = LABELS[lg] || L();          // lg 省略時は画面の言語
   const u = new SpeechSynthesisUtterance(text);
-  u.lang = L().ttsLang;
+  u.lang = LL.ttsLang;
   u.rate = parseFloat($("rate").value);
-  const v = speechSynthesis.getVoices().filter((x) => x.lang.startsWith(L().voicePref));
-  if (v.length) u.voice = v.find((x) => L().voiceRe.test(x.name)) || v[0];
+  const v = speechSynthesis.getVoices().filter((x) => x.lang.startsWith(LL.voicePref));
+  if (v.length) u.voice = v.find((x) => LL.voiceRe.test(x.name)) || v[0];
   return u;
 }
 
@@ -137,16 +138,17 @@ function unlockSpeech() {           // iOS は setTimeout 経由の speak が無
 }
 
 // チップの中身を「発音できる単位」に割ってHTMLで返す
-function unitsHTML(text) {
+function unitsHTML(text, lg) {
   const s = String(text == null ? "" : text);
-  if (lang === "zh") {
+  const lg2 = lg || lang;
+  if (lg2 === "zh") {
     return zhWords(s).map((w) =>
-      isHan(w[0]) ? `<span class="u" data-u="${escA(w)}">${esc(w)}</span>` : esc(w)).join("");
+      isHan(w[0]) ? `<span class="u" data-u="${escA(w)}" data-lg="zh">${esc(w)}</span>` : esc(w)).join("");
   }
   return s.split(/(\s+)/).map((t) => {
     if (!t || /^\s+$/.test(t)) return esc(t);
     const say = t.replace(/[^A-Za-z0-9'’-]/g, "");   // 読み上げ用に句読点を落とす
-    return say ? `<span class="u" data-u="${escA(say)}">${esc(t)}</span>` : esc(t);
+    return say ? `<span class="u" data-u="${escA(say)}" data-lg="${escA(lg2)}">${esc(t)}</span>` : esc(t);
   }).join("");
 }
 
@@ -155,7 +157,7 @@ function speakUnit(el) {
   if (!text) return;
   playerStop();
   speechSynthesis.cancel();
-  const u = makeUtter(text);
+  const u = makeUtter(text, el.dataset.lg);
   u.rate = Math.min(u.rate, 0.75);              // 1語は聞き取りやすいようにゆっくり
   const clear = () => el.classList.remove("saying");
   u.onend = clear;
@@ -729,8 +731,8 @@ const assessUI = {
   render(d) { renderAssess(d); },
 };
 
-function renderAssess(d) {
-  const box = $("assessBox"); const sc = d.scores;
+function renderAssess(d, box) {
+  box = box || $("assessBox"); const sc = d.scores;
   const omitted = d.words.filter((w) => w.error === "Omission").length;
   let h = `<div style="font-size:13px;margin-bottom:4px">総合 <b style="color:${scoreColor(sc.pron)}">${sc.pron}</b>
     <span class="sub">｜発音 ${sc.accuracy}／なめらかさ ${sc.fluency}／読めた割合 ${sc.completeness}%${sc.prosody ? "／抑揚 " + sc.prosody : ""}</span></div>`;
@@ -856,11 +858,165 @@ function render(path) {
   $("viewMain").style.display = (path === "/" || path === "/history") ? "" : "none";
   $("viewRecord").style.display = path === "/record" ? "" : "none";
   $("viewSettings").style.display = path === "/settings" ? "" : "none";
+  $("viewDialog").style.display = path === "/dialog" ? "" : "none";
+  if (path !== "/dialog") dlgStopAll();
   $("appHeader").style.display = path === "/login" ? "none" : "";
   if (path === "/history") setSub("history");
   else if (path === "/") setSub("compose");
   else if (path === "/record") { recLang = lang; loadRecord(); }
+  else if (path === "/dialog") renderDialogList();
   window.scrollTo(0, 0);
+}
+
+// ============================================================ 会話練習（ロールプレイ）
+// 2026-08 深圳出張の履歴から作った10シーン。相手の発話が必ず入っているので
+// 「言う」だけでなく「聞いて返す」練習ができる。データは ./dialogs_zh.json。
+let dialogs = null;
+let dlgCur = null;
+let dlgGen = 0;
+let dlgPlaying = false;
+const dlgOpt = { hideMe: true, showPy: true, showJa: true };
+
+async function loadDialogs() {
+  if (dialogs) return dialogs;
+  const res = await fetch("./dialogs_zh.json", { cache: "no-cache" });
+  if (!res.ok) throw new Error("会話データを読み込めませんでした（" + res.status + "）");
+  dialogs = await res.json();
+  return dialogs;
+}
+
+async function renderDialogList() {
+  dlgStopAll();
+  $("dlgRoom").style.display = "none";
+  $("dlgList").style.display = "";
+  $("dlgList").innerHTML = '<div class="card"><span class="sub">読み込み中…</span></div>';
+  try { await loadDialogs(); }
+  catch (e) { $("dlgList").innerHTML = `<div class="card"><span class="msg ng">${esc(e.message)}</span></div>`; return; }
+  let h = '<div class="card"><h2>会話練習</h2>';
+  dialogs.forEach((d) => {
+    h += `<div class="dlgitem" data-id="${escA(d.id)}">
+      <div><b>${esc(d.jp_title)}</b></div>
+      <div class="sub">${esc(d.zh_title)}　${d.turns.length}往復・${d.total_chars}字・語彙${d.vocab.length}</div>
+    </div>`;
+  });
+  $("dlgList").innerHTML = h + "</div>";
+  $("dlgList").querySelectorAll(".dlgitem").forEach((el) => el.onclick = () => openDialog(el.dataset.id));
+}
+
+function openDialog(id) {
+  const d = (dialogs || []).find((x) => x.id === id);
+  if (!d) return;
+  dlgCur = d;
+  $("dlgList").style.display = "none";
+  $("dlgRoom").style.display = "";
+  $("dlgTitle").textContent = d.jp_title;
+  renderDialogTurns();
+  renderDialogVocab();
+  window.scrollTo(0, 0);
+}
+
+function renderDialogTurns() {
+  $("dlgTurns").innerHTML = dlgCur.turns.map((t) => {
+    const mine = t.role === "me";
+    const mask = mine && dlgOpt.hideMe ? " masked" : "";
+    return `<div class="turn ${mine ? "me" : "other"}" data-idx="${t.idx}">
+      <div class="bub">
+        <div class="zh${mask}">${unitsHTML(t.zh, "zh")}</div>
+        <div class="py sub${mask}"${dlgOpt.showPy ? "" : " hidden"}>${esc(t.pinyin)}</div>
+        <div class="ja sub"${dlgOpt.showJa ? "" : " hidden"}>${esc(t.ja)}</div>
+        <div class="tacts">
+          <button class="icon tsay">🔊</button>
+          ${mine ? '<button class="icon trec">🎙</button><button class="icon tplay" hidden>▶</button>' : ""}
+        </div>
+        <div class="ares"></div>
+      </div>
+    </div>`;
+  }).join("");
+
+  $("dlgTurns").querySelectorAll(".turn").forEach((el) => {
+    const t = dlgCur.turns[+el.dataset.idx - 1];
+    el.querySelector(".tsay").onclick = () => dlgSpeak(t.zh, el);
+    el.querySelectorAll(".masked").forEach((m) => m.onclick = () => dlgReveal(el));
+    const rec = el.querySelector(".trec");
+    if (rec) rec.onclick = () => assess.toggleRecord(() => t.zh, "zh", dlgAssessUI(el));
+    const pb = el.querySelector(".tplay");
+    if (pb) pb.onclick = assess.playMyRec;
+  });
+}
+
+function dlgReveal(el) { el.querySelectorAll(".masked").forEach((x) => x.classList.remove("masked")); }
+
+function dlgSpeak(text, el) {
+  playerStop();
+  speechSynthesis.cancel();
+  if (el) dlgReveal(el);                     // 音が出た以上は隠す意味がないので開ける
+  speechSynthesis.speak(makeUtter(text, "zh"));
+}
+
+// 1ターンぶんの発音判定UI（既存の assess.js をそのまま使う）
+function dlgAssessUI(el) {
+  const btn = el.querySelector(".trec");
+  const play = el.querySelector(".tplay");
+  const box = el.querySelector(".ares");
+  return {
+    recording(on) {
+      btn.textContent = on ? "⏹" : "🎙";
+      btn.classList.toggle("recording", on);
+      if (on) { box.innerHTML = ""; dlgReveal(el); }
+    },
+    tick(sec) { btn.textContent = "⏹ " + sec; },
+    playbackReady(on) { if (play) play.hidden = !on; },
+    pending() { box.innerHTML = "<span class='sub'>発音を判定中…</span>"; },
+    showError(m) { box.innerHTML = `<span class="msg ng">${esc(m)}</span>`; },
+    clearResult() { box.innerHTML = ""; },
+    render(d) { renderAssess(d, box); },
+  };
+}
+
+function renderDialogVocab() {
+  $("dlgVocab").innerHTML = dlgCur.vocab.map((v) =>
+    `<div class="kw"><span>${unitsHTML(v.zh, "zh")} <span class="m">${esc(v.pinyin)} / ${esc(v.ja)}</span></span>
+      <button class="icon" data-vsay="${escA(v.zh)}" style="margin-left:auto">🔊</button></div>`).join("");
+  $("dlgVocab").querySelectorAll("[data-vsay]").forEach((b) =>
+    b.onclick = () => dlgSpeak(b.dataset.vsay));
+}
+
+function dlgPlayAll() {
+  if (dlgPlaying) return dlgStopAll();
+  if (!dlgCur) return;
+  playerStop();
+  speechSynthesis.cancel();
+  dlgPlaying = true;
+  $("dlgPlayAll").textContent = "⏸ 停止";
+  const gen = ++dlgGen;
+  let i = 0;
+  const next = () => {
+    if (gen !== dlgGen) return;
+    if (i >= dlgCur.turns.length) return dlgStopAll();
+    const t = dlgCur.turns[i];
+    const el = $("dlgTurns").querySelector(`.turn[data-idx="${t.idx}"]`);
+    $("dlgTurns").querySelectorAll(".turn").forEach((x) => x.classList.remove("now"));
+    if (el) { el.classList.add("now"); el.scrollIntoView({ block: "center" }); dlgReveal(el); }
+    const u = makeUtter(t.zh, "zh");
+    u.onend = () => { if (gen === dlgGen) { i++; setTimeout(next, 400); } };
+    u.onerror = u.onend;
+    speechSynthesis.speak(u);
+  };
+  next();
+}
+
+function dlgStopAll() {
+  dlgGen++;
+  dlgPlaying = false;
+  speechSynthesis.cancel();
+  const b = $("dlgPlayAll"); if (b) b.textContent = "▶ 通し再生";
+  const box = $("dlgTurns"); if (box) box.querySelectorAll(".turn").forEach((x) => x.classList.remove("now"));
+}
+
+function dlgToggle(key, btn) {
+  dlgOpt[key] = !dlgOpt[key];
+  btn.classList.toggle("active", dlgOpt[key]);
+  if (dlgCur) renderDialogTurns();
 }
 
 // ============================================================ 起動
@@ -887,6 +1043,13 @@ async function boot() {
   $("rate").oninput = (e) => rateChanged(e.target.value);
   $("splitMode").onchange = splitModeChanged;
   document.querySelectorAll("[data-rate]").forEach((b) => b.onclick = () => setRate(+b.dataset.rate));
+  $("navDialog").onclick = () => go("/dialog");
+  $("dlgBack").onclick = () => renderDialogList();
+  $("dlgHide").onclick = (e) => dlgToggle("hideMe", e.currentTarget);
+  $("dlgPy").onclick = (e) => dlgToggle("showPy", e.currentTarget);
+  $("dlgJa").onclick = (e) => dlgToggle("showJa", e.currentTarget);
+  $("dlgPlayAll").onclick = dlgPlayAll;
+  bindLongPressSpeak($("dlgTurns"));
   $("navHistory").onclick = () => go("/history");
   $("navRecord").onclick = () => go("/record");
   $("navSettings").onclick = () => go("/settings");
