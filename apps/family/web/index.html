@@ -62,6 +62,10 @@
   .chip.active { background:var(--accent); color:#fff; }
   .chip.done { background:#d7e3ff; }
   .chip .cpy { font-size:10px; opacity:.7; }
+  .chip .u { display:inline-block; border-radius:6px; padding:0 1px;
+    -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;
+    touch-action:manipulation; transition:background-color .12s ease; }
+  .chip .u.saying { background:#ffd76b; color:#222; }
   #btnRec.recording { background:var(--ng); color:#fff; }
   ruby rt { font-size:.55em; color:var(--accent); }
   .cgrid { display:flex; flex-wrap:wrap; align-items:flex-end; margin:4px 0 6px; }

@@ -39,6 +39,7 @@ let profile = null;
 const L = () => LABELS[lang] || LABELS.en;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+const escA = (s) => esc(s).replace(/"/g, "&quot;").replace(/>/g, "&gt;");
 
 function msg(id, text, ok) {
   const el = $(id); if (!el) return;
@@ -91,6 +92,78 @@ function rateChanged(v) {
   saveSetting({ default_rate: parseFloat(v) });
 }
 function setRate(v) { $("rate").value = v; rateChanged(v); speak(L().sample); }
+
+// ============================================================ 単語長押しで1語だけ発音
+// 子供はまだ1語ずつの読み方が分からないので、節の再生とは別に
+// 単語（中国語は1文字）単位でも音を出せるようにする。
+
+let speechUnlocked = false;
+function unlockSpeech() {           // iOS は setTimeout 経由の speak が無音になるため先に解錠する
+  if (speechUnlocked) return;
+  speechUnlocked = true;
+  try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u); } catch (e) {}
+}
+
+// チップの中身を「発音できる単位」に割ってHTMLで返す
+function unitsHTML(text) {
+  const s = String(text == null ? "" : text);
+  if (lang === "zh") {
+    return Array.from(s).map((ch) =>
+      isHan(ch) ? `<span class="u" data-u="${escA(ch)}">${esc(ch)}</span>` : esc(ch)).join("");
+  }
+  return s.split(/(\s+)/).map((t) => {
+    if (!t || /^\s+$/.test(t)) return esc(t);
+    const say = t.replace(/[^A-Za-z0-9'’-]/g, "");   // 読み上げ用に句読点を落とす
+    return say ? `<span class="u" data-u="${escA(say)}">${esc(t)}</span>` : esc(t);
+  }).join("");
+}
+
+function speakUnit(el) {
+  const text = el.dataset.u;
+  if (!text) return;
+  playerStop();
+  speechSynthesis.cancel();
+  const u = makeUtter(text);
+  u.rate = Math.min(u.rate, 0.75);              // 1語は聞き取りやすいようにゆっくり
+  const clear = () => el.classList.remove("saying");
+  u.onend = clear;
+  u.onerror = clear;
+  el.classList.add("saying");
+  speechSynthesis.speak(u);
+  if (navigator.vibrate) navigator.vibrate(10); // 長押しが効いた合図
+  setTimeout(clear, 4000);                      // onend が来ないブラウザ向けの保険
+}
+
+function bindLongPressSpeak(root) {
+  let timer = null, sx = 0, sy = 0, fired = false;
+  const stop = () => { if (timer !== null) { clearTimeout(timer); timer = null; } };
+
+  root.addEventListener("pointerdown", (e) => {
+    const el = e.target.closest ? e.target.closest(".u") : null;
+    if (!el) return;
+    unlockSpeech();
+    sx = e.clientX; sy = e.clientY; fired = false;
+    timer = setTimeout(() => { timer = null; fired = true; speakUnit(el); }, 400);
+  });
+  root.addEventListener("pointermove", (e) => {
+    if (timer !== null && Math.hypot(e.clientX - sx, e.clientY - sy) > 12) stop();
+  });
+  ["pointerup", "pointercancel", "pointerleave"].forEach((t) => root.addEventListener(t, stop));
+  root.addEventListener("scroll", stop, true);
+
+  // 長押しが成立したら、チップの onclick（節の再生）は起こさない
+  root.addEventListener("click", (e) => {
+    if (!fired) return;
+    fired = false;
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
+
+  // Android の長押しメニューと iOS のテキスト選択を抑止
+  const onWord = (e) => e.target.closest && e.target.closest(".u");
+  root.addEventListener("contextmenu", (e) => { if (onWord(e)) e.preventDefault(); });
+  root.addEventListener("selectstart", (e) => { if (onWord(e)) e.preventDefault(); });
+}
 
 // ============================================================ フレーズ分割
 const ENG_BREAK = /\s+(?=(?:and|but|or|nor|so|yet|because|although|though|while|when|whenever|whereas|if|unless|until|since|that|which|who|whose|whom|where|after|before|to|in|on|at|with|for|from|of|about|into|onto|over|under|through|during|between|among|against|without|within)\b)/i;
@@ -159,8 +232,8 @@ function playerSetText(text) {
     c.className = "chip";
     if (pairs) {
       const py = pairs[i].map((x) => x[1]).filter(Boolean).join(" ");
-      c.innerHTML = `${esc(p)}${py ? `<div class="cpy">${esc(py)}</div>` : ""}`;
-    } else c.textContent = p;
+      c.innerHTML = `${unitsHTML(p)}${py ? `<div class="cpy">${esc(py)}</div>` : ""}`;
+    } else c.innerHTML = unitsHTML(p);
     c.onclick = () => playerPlayOne(i);
     box.appendChild(c);
   });
@@ -776,6 +849,7 @@ async function boot() {
   $("hFilter").oninput = renderHistory;
   ["date", "sent", "word"].forEach((t) => $("tab_" + t).onclick = () => setTab(t));
   $("btnPlay").onclick = playerToggle;
+  bindLongPressSpeak($("phrases"));
   $("btnRestart").onclick = playerRestart;
   $("btnCloseP").onclick = playerClose;
   $("rate").oninput = (e) => rateChanged(e.target.value);
