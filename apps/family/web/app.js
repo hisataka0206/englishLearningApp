@@ -77,9 +77,10 @@ function zhGridHTML(text, turnIdx) {
     if (turnIdx == null) {
       return `<span class="cchar"><span class="py">${esc(p)}</span><span class="hz">${esc(ch)}</span></span>`;
     }
-    const bad = dlgCur && dlgFails.has(dfKey(dlgCur.id, turnIdx, ci));
+    const bad = dlgCur && dlgFails.get(dfKey(dlgCur.id, turnIdx, ci));
     return `<span class="cchar${bad ? " failed" : ""}" data-t="${turnIdx}" data-ci="${ci}"
-      data-ch="${escA(ch)}" data-py="${escA(p)}"><span class="py">${esc(p)}</span><span class="hz">${esc(ch)}</span></span>`;
+      data-ch="${escA(ch)}" data-py="${escA(p)}"><span class="py">${esc(p)}</span><span class="hz">${esc(ch)}</span>${
+      bad ? `<span class="lb">${esc(bad.label)}</span>` : ""}</span>`;
   };
   const body = zhWords(s).map((w) => {
     const cells = Array.from(w).map(cell).join("");
@@ -317,8 +318,13 @@ function playerUpdatePad() {
   document.body.style.paddingBottom = ($("player").offsetHeight + 20) + "px";
 }
 
-function playerLoad(text, lg) {
+function playerLoad(text, lg, turnRef) {
   playLang = lg || null;
+  pTurn = turnRef || null;
+  pSrc = String(text == null ? "" : text).replace(/[/|｜／]/g, " ").replace(/\s+/g, " ").trim();
+  pBreaks = null;
+  pBreakOff();
+  explicitBreaks = /[/|｜／]/.test(text || "");
   speechSynthesis.cancel(); playerSetText(text); playerPlay();
 }
 
@@ -358,13 +364,94 @@ function playerToggle() { player.playing ? playerPause() : playerPlay(); }
 function playerRestart() { player.idx = 0; playerPlay(); }
 function playerStop() { player.playing = false; player.gen++; }
 function playerClose() {
-  playerPause(); playLang = null;
+  playerPause(); playLang = null; pTurn = null; pBreakOff();
   $("player").style.display = "none"; document.body.style.paddingBottom = "";
 }
 function playerSync() {
   if (!current.marked) return;
   player.playing = false; player.gen++; speechSynthesis.cancel();
   playerSetText(current.marked); playerRender();
+}
+
+// ============================================================ 区切り編集（プレイヤー側）
+// 会話練習からも作文からも、下のプレイヤー上で区切りを手で入れられるようにする。
+let pSrc = "";            // 区切り記号を除いた原文
+let pBreaks = null;       // Set<number>：この位置の後ろで切る
+let pBreakMode = false;
+let pTurn = null;         // 会話練習から開いたときの {dialogId, turnIdx}
+
+const pTokens = () => (PL() === "zh"
+  ? Array.from(pSrc.replace(/\s/g, ""))
+  : pSrc.split(/\s+/).filter(Boolean));
+
+function derivePBreaks() {
+  const phrases = splitPhrases(player.text || pSrc);
+  const br = new Set(); let idx = 0;
+  for (let i = 0; i < phrases.length - 1; i++) {
+    const toks = PL() === "zh" ? Array.from(phrases[i].replace(/[/|｜／\s]/g, ""))
+      : phrases[i].split(/\s+/).filter(Boolean);
+    idx += toks.length; br.add(idx - 1);
+  }
+  return br;
+}
+
+function buildPMarked() {
+  let out = "";
+  pTokens().forEach((tk, i) => {
+    out += tk + (PL() === "zh" ? "" : " ");
+    if (pBreaks && pBreaks.has(i)) out += "/ ";
+  });
+  return out.replace(/\s+/g, " ").trim();
+}
+
+function renderPBreakGrid() {
+  const toks = pTokens();
+  const pys = PL() === "zh" ? charPinyin(pSrc.replace(/\s/g, "")) : null;
+  let h = '<div class="cgrid editbreaks">';
+  toks.forEach((tk, i) => {
+    if (i > 0) h += `<span class="cgap${pBreaks.has(i - 1) ? " brk" : ""}" data-pos="${i - 1}"></span>`;
+    const py = pys ? (pys[i] || "") : "";
+    const sz = PL() === "zh" ? "" : ' style="font-size:16px;padding:0 3px"';
+    h += `<span class="cchar"><span class="py">${esc(py)}</span><span class="hz"${sz}>${esc(tk)}</span></span>`;
+  });
+  $("pBreak").innerHTML = h + "</div>";
+  $("pBreak").querySelectorAll(".cgap").forEach((g) => g.onclick = () => {
+    const pos = +g.dataset.pos;
+    if (pBreaks.has(pos)) pBreaks.delete(pos); else pBreaks.add(pos);
+    renderPBreakGrid();
+    applyPBreaks();
+  });
+  playerUpdatePad();
+}
+
+function applyPBreaks() {
+  explicitBreaks = true;
+  const marked = buildPMarked();
+  playerPause();
+  playerSetText(marked);
+  playerRender();
+  if (pTurn) saveDialogEdit(pTurn.dialogId, pTurn.turnIdx, null, marked);
+}
+
+function togglePBreakEdit() {
+  if (!player.text) return;
+  pBreakMode = !pBreakMode;
+  $("btnPBreak").classList.toggle("active", pBreakMode);
+  $("pBreak").style.display = pBreakMode ? "" : "none";
+  $("phrases").style.display = pBreakMode ? "none" : "";
+  if (pBreakMode) {
+    if (!pBreaks) pBreaks = derivePBreaks();
+    renderPBreakGrid();
+  } else {
+    playerUpdatePad();
+  }
+}
+
+function pBreakOff() {
+  pBreakMode = false;
+  $("btnPBreak")?.classList.remove("active");
+  const b = $("pBreak"); if (b) b.style.display = "none";
+  const f = $("phrases"); if (f) f.style.display = "";
 }
 
 function splitModeChanged() {
@@ -924,6 +1011,45 @@ let dlgCur = null;
 const dlgFails = new Map();
 let dlgMark = false;
 
+// ミスの種類。増やしたいときはここに足す（code は文字の下に出る短い記号）。
+const DIALOG_FAIL_LABELS = [
+  { code: "声", name: "声調がちがう" },
+  { code: "母", name: "母音（韻母）" },
+  { code: "子", name: "子音（声母）" },
+  { code: "？", name: "読めない" },
+  { code: "詰", name: "詰まった" },
+];
+const failName = (code) => (DIALOG_FAIL_LABELS.find((l) => l.code === code) || {}).name || code;
+
+// 中国語の訂正と、手で入れた区切り。キーは dialog_id|turn_idx
+const dlgEdits = new Map();
+const deKey = (id, t) => id + "|" + t;
+const turnZh = (t) => (dlgEdits.get(deKey(dlgCur.id, t.idx)) || {}).zh || t.zh;
+const turnMarked = (t) => (dlgEdits.get(deKey(dlgCur.id, t.idx)) || {}).marked || turnZh(t);
+
+async function loadDialogEdits() {
+  let rows = null;
+  try { rows = await api("/api/dialog/edits"); } catch (e) { rows = null; }
+  if (!rows) { try { rows = JSON.parse(localStorage.getItem("dlgEdits") || "[]"); } catch (e) { rows = []; } }
+  dlgEdits.clear();
+  rows.forEach((r) => dlgEdits.set(deKey(r.dialog_id, r.turn_idx), { zh: r.zh || "", marked: r.marked || "" }));
+}
+
+async function saveDialogEdit(id, turnIdx, zh, marked) {
+  const cur = dlgEdits.get(deKey(id, turnIdx)) || { zh: "", marked: "" };
+  const row = { zh: zh == null ? cur.zh : zh, marked: marked == null ? cur.marked : marked };
+  if (!row.zh && !row.marked) dlgEdits.delete(deKey(id, turnIdx));
+  else dlgEdits.set(deKey(id, turnIdx), row);
+  try {
+    localStorage.setItem("dlgEdits", JSON.stringify([...dlgEdits.entries()].map(([k, v]) => {
+      const p = k.split("|");
+      return { dialog_id: p[0], turn_idx: +p[1], zh: v.zh, marked: v.marked };
+    })));
+  } catch (e) { /* noop */ }
+  try { await api("/api/dialog/edit", { dialog_id: id, turn_idx: turnIdx, zh: row.zh, marked: row.marked }); }
+  catch (e) { /* 未マイグレーションでも端末内には残る */ }
+}
+
 function dfKey(id, t, ci) { return id + "|" + t + "|" + ci; }
 
 async function loadDialogFails() {
@@ -945,20 +1071,45 @@ function saveDialogFailsLocal() {
   try { localStorage.setItem("dlgFails", JSON.stringify(rows)); } catch (e) { /* noop */ }
 }
 
-async function toggleDialogFail(cell) {
+async function toggleDialogFail(cell, code) {
   const t = +cell.dataset.t, ci = +cell.dataset.ci;
   const ch = cell.dataset.ch || "", py = cell.dataset.py || "";
   const key = dfKey(dlgCur.id, t, ci);
-  const had = dlgFails.has(key);
-  if (had) { dlgFails.delete(key); cell.classList.remove("failed"); }
-  else { dlgFails.set(key, { label: "Fail", char: ch, syllable: py }); cell.classList.add("failed"); }
+  const remove = code == null;
+  if (remove) { dlgFails.delete(key); cell.classList.remove("failed"); }
+  else { dlgFails.set(key, { label: code, char: ch, syllable: py }); cell.classList.add("failed"); }
+  const lb = cell.querySelector(".lb");
+  if (lb) lb.remove();
+  if (!remove) cell.insertAdjacentHTML("beforeend", `<span class="lb">${esc(code)}</span>`);
   saveDialogFailsLocal();
   renderDialogWeak();
   try {
-    await api(had ? "/api/dialog/fail/delete" : "/api/dialog/fail",
-      { dialog_id: dlgCur.id, turn_idx: t, ci, char: ch, syllable: py, label: "Fail" });
+    await api(remove ? "/api/dialog/fail/delete" : "/api/dialog/fail",
+      { dialog_id: dlgCur.id, turn_idx: t, ci, char: ch, syllable: py, label: code || "Fail" });
   } catch (e) { /* 未マイグレーションでも端末内には残る */ }
 }
+
+// 文字をタップ／右クリックしたときに出る「ミスの種類」ポップアップ
+function openFailPop(cell) {
+  const pop = $("dfPop");
+  const key = dfKey(dlgCur.id, +cell.dataset.t, +cell.dataset.ci);
+  const now = dlgFails.get(key);
+  $("dfPopChar").textContent = `${cell.dataset.ch}　${cell.dataset.py}`;
+  $("dfPopBtns").innerHTML = DIALOG_FAIL_LABELS.map((l) =>
+    `<button class="fbtn${now && now.label === l.code ? " on" : ""}" data-code="${escA(l.code)}">
+      <b>${esc(l.code)}</b> ${esc(l.name)}</button>`).join("")
+    + (now ? '<button class="fbtn rm" data-code="">✕ 取消</button>' : "");
+  $("dfPopBtns").querySelectorAll("[data-code]").forEach((b) => b.onclick = () => {
+    closeFailPop();
+    toggleDialogFail(cell, b.dataset.code || null);
+  });
+  pop.style.display = "";
+  const r = cell.getBoundingClientRect();
+  const w = pop.offsetWidth, hgt = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + "px";
+  pop.style.top = (r.top > hgt + 12 ? r.top - hgt - 8 : r.bottom + 8) + "px";
+}
+function closeFailPop() { $("dfPop").style.display = "none"; }
 
 function dlgFailCount(id) {
   let n = 0;
@@ -1008,6 +1159,7 @@ async function renderDialogList() {
   try { await loadDialogs(); }
   catch (e) { $("dlgList").innerHTML = `<div class="card"><span class="msg ng">${esc(e.message)}</span></div>`; return; }
   await loadDialogFails();
+  await loadDialogEdits();
   let h = '<div class="card"><h2>会話練習</h2>';
   dialogs.forEach((d) => {
     h += `<div class="dlgitem" data-id="${escA(d.id)}">
@@ -1039,11 +1191,12 @@ function renderDialogTurns() {
     const mask = mine && dlgOpt.hideMe ? " masked" : "";
     return `<div class="turn ${mine ? "me" : "other"}" data-idx="${t.idx}">
       <div class="bub">
-        <div class="zh${mask}${dlgOpt.showPy ? "" : " nopy"}">${zhGridHTML(t.zh, t.idx)}</div>
+        <div class="zh${mask}${dlgOpt.showPy ? "" : " nopy"}">${zhGridHTML(turnZh(t), t.idx)}</div>
         <div class="ja sub"${dlgOpt.showJa ? "" : " hidden"}>${esc(t.ja)}</div>
         <div class="tacts">
           <button class="icon tsay">🔊</button>
           <button class="icon tsplit">✂️</button>
+          <button class="icon tedit">✏️</button>
           ${mine ? '<button class="icon trec">🎙</button><button class="icon tplay" hidden>▶</button>' : ""}
         </div>
         <div class="ares"></div>
@@ -1053,14 +1206,66 @@ function renderDialogTurns() {
 
   $("dlgTurns").querySelectorAll(".turn").forEach((el) => {
     const t = dlgCur.turns[+el.dataset.idx - 1];
-    el.querySelector(".tsay").onclick = () => dlgSpeak(t.zh, el);
-    el.querySelector(".tsplit").onclick = () => { dlgStopAll(); dlgReveal(el); playerLoad(t.zh, "zh"); };
+    el.querySelector(".tsay").onclick = () => dlgSpeak(turnZh(t), el);
+    el.querySelector(".tsplit").onclick = () => {
+      dlgStopAll(); dlgReveal(el);
+      playerLoad(turnMarked(t), "zh", { dialogId: dlgCur.id, turnIdx: t.idx });
+    };
+    el.querySelector(".tedit").onclick = () => openTurnEdit(el, t);
+    el.querySelectorAll(".cchar[data-ch]").forEach((c) =>
+      c.oncontextmenu = (ev) => { ev.preventDefault(); dlgReveal(el); openFailPop(c); return false; });
     el.querySelectorAll(".masked").forEach((m) => m.onclick = () => dlgReveal(el));
     const rec = el.querySelector(".trec");
-    if (rec) rec.onclick = () => assess.toggleRecord(() => t.zh, "zh", dlgAssessUI(el));
+    if (rec) rec.onclick = () => assess.toggleRecord(() => turnZh(t), "zh", dlgAssessUI(el));
     const pb = el.querySelector(".tplay");
     if (pb) pb.onclick = assess.playMyRec;
   });
+}
+
+// 中国語がしっくり来ないときに直す。拼音は保存後に自動で振り直される
+// （表示は zhGridHTML が毎回その場で計算しているため、データを持ち回る必要がない）。
+function openTurnEdit(el, t) {
+  const bub = el.querySelector(".bub");
+  if (bub.querySelector(".tedit-box")) return;
+  dlgReveal(el);
+  const box = document.createElement("div");
+  box.className = "tedit-box";
+  box.innerHTML = `<textarea class="te"></textarea>
+    <div class="row" style="margin-top:6px">
+      <button class="primary small tsave">保存</button>
+      <button class="ghost small tcancel">取消</button>
+      <button class="ghost small treset" style="margin-left:auto">原文に戻す</button>
+    </div>`;
+  bub.appendChild(box);
+  const ta = box.querySelector(".te");
+  ta.value = turnZh(t);
+  ta.focus();
+  const close = () => box.remove();
+  box.querySelector(".tcancel").onclick = close;
+  box.querySelector(".tsave").onclick = async () => {
+    const v = ta.value.replace(/\s+/g, "").trim();
+    if (!v) return close();
+    if (v !== turnZh(t)) clearTurnFails(dlgCur.id, t.idx);   // 文字位置がずれるので、その行のミスは外す
+    await saveDialogEdit(dlgCur.id, t.idx, v === t.zh ? "" : v, "");
+    close(); renderDialogTurns(); renderDialogWeak();
+  };
+  box.querySelector(".treset").onclick = async () => {
+    clearTurnFails(dlgCur.id, t.idx);
+    await saveDialogEdit(dlgCur.id, t.idx, "", "");
+    close(); renderDialogTurns(); renderDialogWeak();
+  };
+}
+
+function clearTurnFails(id, turnIdx) {
+  const pre = id + "|" + turnIdx + "|";
+  [...dlgFails.keys()].forEach((k) => {
+    if (k.startsWith(pre)) {
+      dlgFails.delete(k);
+      const p = k.split("|");
+      api("/api/dialog/fail/delete", { dialog_id: id, turn_idx: +p[1], ci: +p[2] }).catch(() => {});
+    }
+  });
+  saveDialogFailsLocal();
 }
 
 function dlgReveal(el) { el.querySelectorAll(".masked").forEach((x) => x.classList.remove("masked")); }
@@ -1116,7 +1321,7 @@ function dlgPlayAll() {
     const el = $("dlgTurns").querySelector(`.turn[data-idx="${t.idx}"]`);
     $("dlgTurns").querySelectorAll(".turn").forEach((x) => x.classList.remove("now"));
     if (el) { el.classList.add("now"); el.scrollIntoView({ block: "center" }); dlgReveal(el); }
-    const u = makeUtter(t.zh, "zh");
+    const u = makeUtter(turnZh(t), "zh");
     u.onend = () => { if (gen === dlgGen) { i++; setTimeout(next, 400); } };
     u.onerror = u.onend;
     speechSynthesis.speak(u);
@@ -1178,8 +1383,13 @@ async function boot() {
     const cell = e.target.closest(".cchar");
     if (!cell || !cell.dataset.ch) return;
     if (cell.closest(".masked")) return;                     // 伏せ字は先に開くのが優先
-    toggleDialogFail(cell);
+    openFailPop(cell);                                       // 種類を選ばせる
   });
+  $("btnPBreak").onclick = togglePBreakEdit;
+  document.addEventListener("pointerdown", (e) => {          // ポップアップの外を触ったら閉じる
+    const pop = $("dfPop");
+    if (pop.style.display !== "none" && !pop.contains(e.target)) closeFailPop();
+  }, true);
   bindLongPressSpeak($("dlgTurns"));
   $("navHistory").onclick = () => go("/history");
   $("navRecord").onclick = () => go("/record");

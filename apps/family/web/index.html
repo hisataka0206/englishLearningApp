@@ -99,6 +99,18 @@
   .cchar.failed .py { color:var(--ng); }
   #dlgTurns.marking .zh:not(.masked) .cchar[data-ch] { cursor:pointer; background:#fff7f7; }
   #dlgTurns.marking .zh:not(.masked) .cchar.failed { background:#fdecec; }
+  .cchar .lb { font-size:9px; color:var(--ng); line-height:1; }
+  #dfPop { position:fixed; z-index:40; background:#fff; border:1px solid var(--accent);
+    border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,.2); padding:8px; max-width:250px; }
+  #dfPopChar { font-weight:700; text-align:center; margin-bottom:6px; font-size:15px; }
+  #dfPopBtns { display:flex; flex-wrap:wrap; gap:6px; }
+  .fbtn { background:#eef1f8; border:0; border-radius:8px; padding:7px 10px; font-size:13px; cursor:pointer; }
+  .fbtn.on { background:var(--accent); color:#fff; }
+  .fbtn.rm { background:#fdecec; color:var(--ng); }
+  .tedit-box { margin-top:8px; }
+  .tedit-box .te { width:100%; font-size:17px; border:1px solid var(--accent);
+    border-radius:10px; padding:8px; min-height:64px; }
+  #pBreak .cgrid { margin:0; }
   #dlgVocab .kw .cgrid { margin:0; }
   #dlgVocab .cchar .hz { font-size:18px; }
   .turn .masked { filter:blur(6px); cursor:pointer; }
@@ -248,11 +260,19 @@
 </div>
 </main>
 
+<!-- ============================================ ミスの種類 -->
+<div id="dfPop" style="display:none">
+  <div id="dfPopChar"></div>
+  <div id="dfPopBtns"></div>
+</div>
+
 <!-- ============================================ プレイヤー -->
 <div id="player"><div class="inner">
   <div id="phrases"></div>
+  <div id="pBreak" style="display:none;margin-bottom:6px"></div>
   <div id="assessBox" style="display:none;margin-bottom:6px"></div>
   <div class="row" style="margin-top:0;align-items:center">
+    <button class="small tab" id="btnPBreak" title="区切りを手で入れる">✂️ 区切り</button>
     <button class="ghost" id="btnRec" title="録音して発音チェック">🎙 録音</button>
     <button class="ghost" id="btnPlayRec" style="display:none">▶ 自分</button>
     <button class="ghost" id="btnPlayModel" style="display:none">▶ お手本</button>

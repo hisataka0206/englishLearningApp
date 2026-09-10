@@ -181,6 +181,25 @@ export async function api(path, opts) {
       return { deleted: true };
     }
 
+    // ------------------------------------------------- 会話練習の修正
+    case "/api/dialog/edits": {
+      const { data, error } = await sb
+        .from("dialog_edits").select("dialog_id, turn_idx, zh, marked").limit(3000);
+      if (error) throw new Error(error.message);
+      return data ?? [];
+    }
+
+    case "/api/dialog/edit": {
+      const { error } = await sb.from("dialog_edits").upsert({
+        user_id: await uid(),
+        dialog_id: opts.dialog_id, turn_idx: opts.turn_idx,
+        zh: opts.zh ?? "", marked: opts.marked ?? "",
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "user_id,dialog_id,turn_idx" });
+      if (error) throw new Error(error.message);
+      return { ok: true };
+    }
+
     // ---------------------------------------------------------------- 単語
     case "/api/words": {
       if (!opts) {
