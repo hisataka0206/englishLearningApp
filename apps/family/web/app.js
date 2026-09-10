@@ -56,6 +56,34 @@ function pinyinOf(text) {
   try { return pinyin(text, { toneType: "symbol", type: "string" }); } catch { return ""; }
 }
 
+// 文全体の文脈で1文字ずつの拼音を出す。type:"all" は語の中での読みを見るので
+// 1文字ずつ pinyin() を呼ぶより正確（行李 → xíng li、意思 → yì si）。
+function charPinyin(text) {
+  try {
+    return pinyin(text, { type: "all", toneType: "symbol" }).map((x) => x.pinyin || "");
+  } catch (e) {
+    return Array.from(text || "").map((ch) => (isHan(ch) ? pinyinOf(ch) : ""));
+  }
+}
+
+// 記事と同じ「1文字の上に拼音」。語のまとまりは .u で包むので長押しは語単位のまま。
+function zhGridHTML(text) {
+  const s = String(text == null ? "" : text).replace(/\s+/g, "");
+  const py = charPinyin(s);
+  let i = 0;
+  const cell = (ch) => {
+    const p = py[i++] || "";
+    return `<span class="cchar"><span class="py">${esc(p)}</span><span class="hz">${esc(ch)}</span></span>`;
+  };
+  const body = zhWords(s).map((w) => {
+    const cells = Array.from(w).map(cell).join("");
+    return isHan(w[0])
+      ? `<span class="u" data-u="${escA(w)}" data-lg="zh">${cells}</span>`
+      : `<span class="nu">${cells}</span>`;
+  }).join("");
+  return `<div class="cgrid">${body}</div>`;
+}
+
 function pinyinPairs(text) {
   return Array.from(text || "").map((ch) => {
     if (isHan(ch)) { try { return [ch, pinyin(ch, { toneType: "symbol", type: "string" })]; } catch { return [ch, ""]; } }
@@ -921,8 +949,7 @@ function renderDialogTurns() {
     const mask = mine && dlgOpt.hideMe ? " masked" : "";
     return `<div class="turn ${mine ? "me" : "other"}" data-idx="${t.idx}">
       <div class="bub">
-        <div class="zh${mask}">${unitsHTML(t.zh, "zh")}</div>
-        <div class="py sub${mask}"${dlgOpt.showPy ? "" : " hidden"}>${esc(t.pinyin)}</div>
+        <div class="zh${mask}${dlgOpt.showPy ? "" : " nopy"}">${zhGridHTML(t.zh)}</div>
         <div class="ja sub"${dlgOpt.showJa ? "" : " hidden"}>${esc(t.ja)}</div>
         <div class="tacts">
           <button class="icon tsay">🔊</button>
@@ -975,7 +1002,7 @@ function dlgAssessUI(el) {
 
 function renderDialogVocab() {
   $("dlgVocab").innerHTML = dlgCur.vocab.map((v) =>
-    `<div class="kw"><span>${unitsHTML(v.zh, "zh")} <span class="m">${esc(v.pinyin)} / ${esc(v.ja)}</span></span>
+    `<div class="kw"><span>${zhGridHTML(v.zh)}<span class="m">${esc(v.ja)}</span></span>
       <button class="icon" data-vsay="${escA(v.zh)}" style="margin-left:auto">🔊</button></div>`).join("");
   $("dlgVocab").querySelectorAll("[data-vsay]").forEach((b) =>
     b.onclick = () => dlgSpeak(b.dataset.vsay));
