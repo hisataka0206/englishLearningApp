@@ -95,6 +95,10 @@
   .cgrid .u { display:inline-flex; align-items:flex-end; margin:0 1px; border-radius:6px; padding:0; }
   .cgrid .nu { display:inline-flex; align-items:flex-end; }
   .zh.nopy .py { display:none; }
+  .cchar.failed .hz { color:var(--ng); }
+  .cchar.failed .py { color:var(--ng); }
+  #dlgTurns.marking .zh:not(.masked) .cchar[data-ch] { cursor:pointer; background:#fff7f7; }
+  #dlgTurns.marking .zh:not(.masked) .cchar.failed { background:#fdecec; }
   #dlgVocab .kw .cgrid { margin:0; }
   #dlgVocab .cchar .hz { font-size:18px; }
   .turn .masked { filter:blur(6px); cursor:pointer; }
@@ -210,10 +214,12 @@
         <button class="tab small active" id="dlgHide">🙈 自分</button>
         <button class="tab small active" id="dlgPy">拼音</button>
         <button class="tab small active" id="dlgJa">🇯🇵</button>
+        <button class="tab small" id="dlgMark">✕ ミス</button>
         <button class="ghost small" id="dlgPlayAll" style="margin-left:auto">▶ 通し再生</button>
       </div>
     </div>
     <div id="dlgTurns"></div>
+    <div class="card" id="dlgWeakCard" style="display:none"><h2>苦手な字</h2><div id="dlgWeak"></div></div>
     <div class="card"><h2>語彙</h2><div id="dlgVocab"></div></div>
   </div>
 </div>

@@ -152,6 +152,35 @@ export async function api(path, opts) {
       return { deleted: opts.id };
     }
 
+    // ------------------------------------------------- 会話練習のミス（1文字ごと）
+    case "/api/dialog/fails": {
+      const { data, error } = await sb
+        .from("dialog_fails")
+        .select("dialog_id, turn_idx, ci, char, syllable, label, occurred_at")
+        .order("occurred_at", { ascending: false })
+        .limit(3000);
+      if (error) throw new Error(error.message);
+      return data ?? [];
+    }
+
+    case "/api/dialog/fail": {
+      const { error } = await sb.from("dialog_fails").upsert({
+        user_id: await uid(),
+        dialog_id: opts.dialog_id, turn_idx: opts.turn_idx, ci: opts.ci,
+        char: opts.char, syllable: opts.syllable ?? "", label: opts.label ?? "Fail",
+        occurred_at: new Date().toISOString(),
+      }, { onConflict: "user_id,dialog_id,turn_idx,ci" });
+      if (error) throw new Error(error.message);
+      return { ok: true };
+    }
+
+    case "/api/dialog/fail/delete": {
+      const { error } = await sb.from("dialog_fails").delete()
+        .eq("dialog_id", opts.dialog_id).eq("turn_idx", opts.turn_idx).eq("ci", opts.ci);
+      if (error) throw new Error(error.message);
+      return { deleted: true };
+    }
+
     // ---------------------------------------------------------------- 単語
     case "/api/words": {
       if (!opts) {

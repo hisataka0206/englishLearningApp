@@ -67,13 +67,19 @@ function charPinyin(text) {
 }
 
 // 記事と同じ「1文字の上に拼音」。語のまとまりは .u で包むので長押しは語単位のまま。
-function zhGridHTML(text) {
+function zhGridHTML(text, turnIdx) {
   const s = String(text == null ? "" : text).replace(/\s+/g, "");
   const py = charPinyin(s);
   let i = 0;
   const cell = (ch) => {
-    const p = py[i++] || "";
-    return `<span class="cchar"><span class="py">${esc(p)}</span><span class="hz">${esc(ch)}</span></span>`;
+    const p = py[i] || "";
+    const ci = i++;
+    if (turnIdx == null) {
+      return `<span class="cchar"><span class="py">${esc(p)}</span><span class="hz">${esc(ch)}</span></span>`;
+    }
+    const bad = dlgCur && dlgFails.has(dfKey(dlgCur.id, turnIdx, ci));
+    return `<span class="cchar${bad ? " failed" : ""}" data-t="${turnIdx}" data-ci="${ci}"
+      data-ch="${escA(ch)}" data-py="${escA(p)}"><span class="py">${esc(p)}</span><span class="hz">${esc(ch)}</span></span>`;
   };
   const body = zhWords(s).map((w) => {
     const cells = Array.from(w).map(cell).join("");
@@ -146,7 +152,7 @@ function makeUtter(text, lg) {
   return u;
 }
 
-function speak(text) { playerStop(); speechSynthesis.cancel(); speechSynthesis.speak(makeUtter(text)); }
+function speak(text, lg) { playerStop(); speechSynthesis.cancel(); speechSynthesis.speak(makeUtter(text, lg)); }
 
 function rateChanged(v) {
   $("rateVal").textContent = parseFloat(v).toFixed(2).replace(/0$/, "");
@@ -273,13 +279,17 @@ function splitPhrases(text, mode) {
   if (explicitBreaks) return text.split(/[/|｜／]+/).map((s) => s.trim()).filter(Boolean);
   const segments = text.split(/[/|｜／]+/).map((s) => s.trim()).filter(Boolean);
   const out = [];
-  const auto = lang === "zh" ? zhSplit : autoSplit;
+  const auto = PL() === "zh" ? zhSplit : autoSplit;
   (segments.length ? segments : [text]).forEach((seg) => out.push(...auto(seg, mode)));
   return out.length ? out : [text];
 }
 
 // ============================================================ プレイヤー
 const player = { text: "", phrases: [], idx: 0, playing: false, gen: 0 };
+// プレイヤーに流す言語。会話練習（中国語）を、画面が英語モードのままでも
+// 正しく区切って読ませるために、作文画面の lang とは別に持つ。
+let playLang = null;
+const PL = () => playLang || lang;
 
 function playerSetText(text) {
   if (player.text && player.text !== text) assess.clearRecording(assessUI);   // 別の文なら録音を破棄
@@ -288,14 +298,14 @@ function playerSetText(text) {
   player.idx = 0;
   const box = $("phrases");
   box.innerHTML = "";
-  const pairs = lang === "zh" ? player.phrases.map((p) => pinyinPairs(p)) : null;
+  const pairs = PL() === "zh" ? player.phrases.map((p) => pinyinPairs(p)) : null;
   player.phrases.forEach((p, i) => {
     const c = document.createElement("span");
     c.className = "chip";
     if (pairs) {
       const py = pairs[i].map((x) => x[1]).filter(Boolean).join(" ");
-      c.innerHTML = `${unitsHTML(p)}${py ? `<div class="cpy">${esc(py)}</div>` : ""}`;
-    } else c.innerHTML = unitsHTML(p);
+      c.innerHTML = `${unitsHTML(p, PL())}${py ? `<div class="cpy">${esc(py)}</div>` : ""}`;
+    } else c.innerHTML = unitsHTML(p, PL());
     c.onclick = () => playerPlayOne(i);
     box.appendChild(c);
   });
@@ -307,7 +317,10 @@ function playerUpdatePad() {
   document.body.style.paddingBottom = ($("player").offsetHeight + 20) + "px";
 }
 
-function playerLoad(text) { speechSynthesis.cancel(); playerSetText(text); playerPlay(); }
+function playerLoad(text, lg) {
+  playLang = lg || null;
+  speechSynthesis.cancel(); playerSetText(text); playerPlay();
+}
 
 function playerRender() {
   document.querySelectorAll("#phrases .chip").forEach((c, i) => {
@@ -327,7 +340,7 @@ function playerPlay() {
     if (gen !== player.gen || !player.playing) return;
     if (player.idx >= player.phrases.length) { player.playing = false; playerRender(); return; }
     playerRender();
-    const u = makeUtter(player.phrases[player.idx]);
+    const u = makeUtter(player.phrases[player.idx], PL());
     u.onend = () => { if (gen === player.gen && player.playing) { player.idx++; next(); } };
     speechSynthesis.speak(u);
   };
@@ -337,14 +350,17 @@ function playerPlay() {
 function playerPlayOne(i) {
   player.playing = false; player.gen++; speechSynthesis.cancel();
   player.idx = i; playerRender();
-  speechSynthesis.speak(makeUtter(player.phrases[i]));
+  speechSynthesis.speak(makeUtter(player.phrases[i], PL()));
 }
 
 function playerPause() { player.playing = false; player.gen++; speechSynthesis.cancel(); playerRender(); }
 function playerToggle() { player.playing ? playerPause() : playerPlay(); }
 function playerRestart() { player.idx = 0; playerPlay(); }
 function playerStop() { player.playing = false; player.gen++; }
-function playerClose() { playerPause(); $("player").style.display = "none"; document.body.style.paddingBottom = ""; }
+function playerClose() {
+  playerPause(); playLang = null;
+  $("player").style.display = "none"; document.body.style.paddingBottom = "";
+}
 function playerSync() {
   if (!current.marked) return;
   player.playing = false; player.gen++; speechSynthesis.cancel();
@@ -901,6 +917,77 @@ function render(path) {
 // 「言う」だけでなく「聞いて返す」練習ができる。データは ./dialogs_zh.json。
 let dialogs = null;
 let dlgCur = null;
+
+// ---- ミス記録（記事本編と同じく1文字ごと） --------------------------------
+// キーは dialog_id|turn_idx|ci。Supabase に入れるが、テーブル未作成でも
+// 端末内に残して使えるようにしておく（マイグレーション適用後に同期される）。
+const dlgFails = new Map();
+let dlgMark = false;
+
+function dfKey(id, t, ci) { return id + "|" + t + "|" + ci; }
+
+async function loadDialogFails() {
+  let rows = null;
+  try { rows = await api("/api/dialog/fails"); } catch (e) { rows = null; }
+  if (!rows) {
+    try { rows = JSON.parse(localStorage.getItem("dlgFails") || "[]"); } catch (e) { rows = []; }
+  }
+  dlgFails.clear();
+  rows.forEach((r) => dlgFails.set(dfKey(r.dialog_id, r.turn_idx, r.ci),
+    { label: r.label || "Fail", char: r.char || "", syllable: r.syllable || "" }));
+}
+
+function saveDialogFailsLocal() {
+  const rows = [...dlgFails.entries()].map(([k, v]) => {
+    const p = k.split("|");
+    return { dialog_id: p[0], turn_idx: +p[1], ci: +p[2], char: v.char, syllable: v.syllable, label: v.label };
+  });
+  try { localStorage.setItem("dlgFails", JSON.stringify(rows)); } catch (e) { /* noop */ }
+}
+
+async function toggleDialogFail(cell) {
+  const t = +cell.dataset.t, ci = +cell.dataset.ci;
+  const ch = cell.dataset.ch || "", py = cell.dataset.py || "";
+  const key = dfKey(dlgCur.id, t, ci);
+  const had = dlgFails.has(key);
+  if (had) { dlgFails.delete(key); cell.classList.remove("failed"); }
+  else { dlgFails.set(key, { label: "Fail", char: ch, syllable: py }); cell.classList.add("failed"); }
+  saveDialogFailsLocal();
+  renderDialogWeak();
+  try {
+    await api(had ? "/api/dialog/fail/delete" : "/api/dialog/fail",
+      { dialog_id: dlgCur.id, turn_idx: t, ci, char: ch, syllable: py, label: "Fail" });
+  } catch (e) { /* 未マイグレーションでも端末内には残る */ }
+}
+
+function dlgFailCount(id) {
+  let n = 0;
+  dlgFails.forEach((v, k) => { if (k.slice(0, k.indexOf("|")) === id) n++; });
+  return n;
+}
+
+// この回でつけたミスを、字＋音節でまとめて出す
+function renderDialogWeak() {
+  const box = $("dlgWeak"); if (!box || !dlgCur) return;
+  const rows = [];
+  dlgFails.forEach((v, k) => { if (k.slice(0, k.indexOf("|")) === dlgCur.id) rows.push(v); });
+  if (!rows.length) { $("dlgWeakCard").style.display = "none"; return; }
+  const cnt = new Map();
+  rows.forEach((r) => {
+    const key = r.char + "|" + r.syllable;
+    cnt.set(key, (cnt.get(key) || 0) + 1);
+  });
+  const list = [...cnt.entries()].sort((a, b) => b[1] - a[1]);
+  $("dlgWeakCard").style.display = "";
+  box.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px">' + list.map(([k, n]) => {
+    const [ch, py] = k.split("|");
+    return `<button class="chip" data-wsay="${escA(ch)}" style="background:#fdecec;color:var(--ng)">
+      ${esc(ch)}<div class="cpy">${esc(py)}${n > 1 ? " ×" + n : ""}</div></button>`;
+  }).join("") + "</div>";
+  box.querySelectorAll("[data-wsay]").forEach((b) => b.onclick = () => dlgSpeak(b.dataset.wsay));
+}
+
+
 let dlgGen = 0;
 let dlgPlaying = false;
 const dlgOpt = { hideMe: true, showPy: true, showJa: true };
@@ -920,11 +1007,13 @@ async function renderDialogList() {
   $("dlgList").innerHTML = '<div class="card"><span class="sub">読み込み中…</span></div>';
   try { await loadDialogs(); }
   catch (e) { $("dlgList").innerHTML = `<div class="card"><span class="msg ng">${esc(e.message)}</span></div>`; return; }
+  await loadDialogFails();
   let h = '<div class="card"><h2>会話練習</h2>';
   dialogs.forEach((d) => {
     h += `<div class="dlgitem" data-id="${escA(d.id)}">
       <div><b>${esc(d.jp_title)}</b></div>
-      <div class="sub">${esc(d.zh_title)}　${d.turns.length}往復・${d.total_chars}字・語彙${d.vocab.length}</div>
+      <div class="sub">${esc(d.zh_title)}　${d.turns.length}往復・${d.total_chars}字・語彙${d.vocab.length}
+        ${dlgFailCount(d.id) ? `<span class="badge">ミス ${dlgFailCount(d.id)}</span>` : ""}</div>
     </div>`;
   });
   $("dlgList").innerHTML = h + "</div>";
@@ -940,6 +1029,7 @@ function openDialog(id) {
   $("dlgTitle").textContent = d.jp_title;
   renderDialogTurns();
   renderDialogVocab();
+  renderDialogWeak();
   window.scrollTo(0, 0);
 }
 
@@ -949,10 +1039,11 @@ function renderDialogTurns() {
     const mask = mine && dlgOpt.hideMe ? " masked" : "";
     return `<div class="turn ${mine ? "me" : "other"}" data-idx="${t.idx}">
       <div class="bub">
-        <div class="zh${mask}${dlgOpt.showPy ? "" : " nopy"}">${zhGridHTML(t.zh)}</div>
+        <div class="zh${mask}${dlgOpt.showPy ? "" : " nopy"}">${zhGridHTML(t.zh, t.idx)}</div>
         <div class="ja sub"${dlgOpt.showJa ? "" : " hidden"}>${esc(t.ja)}</div>
         <div class="tacts">
           <button class="icon tsay">🔊</button>
+          <button class="icon tsplit">✂️</button>
           ${mine ? '<button class="icon trec">🎙</button><button class="icon tplay" hidden>▶</button>' : ""}
         </div>
         <div class="ares"></div>
@@ -963,6 +1054,7 @@ function renderDialogTurns() {
   $("dlgTurns").querySelectorAll(".turn").forEach((el) => {
     const t = dlgCur.turns[+el.dataset.idx - 1];
     el.querySelector(".tsay").onclick = () => dlgSpeak(t.zh, el);
+    el.querySelector(".tsplit").onclick = () => { dlgStopAll(); dlgReveal(el); playerLoad(t.zh, "zh"); };
     el.querySelectorAll(".masked").forEach((m) => m.onclick = () => dlgReveal(el));
     const rec = el.querySelector(".trec");
     if (rec) rec.onclick = () => assess.toggleRecord(() => t.zh, "zh", dlgAssessUI(el));
@@ -1076,15 +1168,27 @@ async function boot() {
   $("dlgPy").onclick = (e) => dlgToggle("showPy", e.currentTarget);
   $("dlgJa").onclick = (e) => dlgToggle("showJa", e.currentTarget);
   $("dlgPlayAll").onclick = dlgPlayAll;
+  $("dlgMark").onclick = (e) => {
+    dlgMark = !dlgMark;
+    e.currentTarget.classList.toggle("active", dlgMark);
+    $("dlgTurns").classList.toggle("marking", dlgMark);
+  };
+  $("dlgTurns").addEventListener("click", (e) => {           // ミス記録モードのときだけ拾う
+    if (!dlgMark || !dlgCur) return;
+    const cell = e.target.closest(".cchar");
+    if (!cell || !cell.dataset.ch) return;
+    if (cell.closest(".masked")) return;                     // 伏せ字は先に開くのが優先
+    toggleDialogFail(cell);
+  });
   bindLongPressSpeak($("dlgTurns"));
   $("navHistory").onclick = () => go("/history");
   $("navRecord").onclick = () => go("/record");
   $("navSettings").onclick = () => go("/settings");
   // 発音チェック
   $("btnRec").onclick = () => assess.toggleRecord(
-    () => (player.text || "").replace(/[/|｜／]/g, "").trim(), lang, assessUI);
+    () => (player.text || "").replace(/[/|｜／]/g, "").trim(), PL(), assessUI);
   $("btnPlayRec").onclick = assess.playMyRec;
-  $("btnPlayModel").onclick = () => { const t = assess.modelText(); if (t) speak(t); };
+  $("btnPlayModel").onclick = () => { const t = assess.modelText(); if (t) speak(t, PL()); };
   $("rlang_en").onclick = () => { recLang = "en"; loadRecord(); };
   $("rlang_zh").onclick = () => { recLang = "zh"; loadRecord(); };
   $("rtab_weak").onclick = () => { recTab = "weak"; loadRecord(); };
