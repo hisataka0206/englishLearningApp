@@ -66,8 +66,21 @@ function charPinyin(text) {
   }
 }
 
+// 「/」入りの文から、何文字目の後ろで切るかを取り出す
+function breaksFromMarked(marked) {
+  const set = new Set();
+  if (!marked || !/[/|｜／]/.test(marked)) return set;
+  let i = -1;
+  for (const ch of String(marked)) {
+    if (/[/|｜／]/.test(ch)) { if (i >= 0) set.add(i); continue; }
+    if (/\s/.test(ch)) continue;
+    i++;
+  }
+  return set;
+}
+
 // 記事と同じ「1文字の上に拼音」。語のまとまりは .u で包むので長押しは語単位のまま。
-function zhGridHTML(text, turnIdx) {
+function zhGridHTML(text, turnIdx, breaks) {
   const s = String(text == null ? "" : text).replace(/\s+/g, "");
   const py = charPinyin(s);
   let i = 0;
@@ -80,7 +93,8 @@ function zhGridHTML(text, turnIdx) {
     const bad = dlgCur && dlgFails.get(dfKey(dlgCur.id, turnIdx, ci));
     return `<span class="cchar${bad ? " failed" : ""}" data-t="${turnIdx}" data-ci="${ci}"
       data-ch="${escA(ch)}" data-py="${escA(p)}"><span class="py">${esc(p)}</span><span class="hz">${esc(ch)}</span>${
-      bad ? `<span class="lb">${esc(bad.label)}</span>` : ""}</span>`;
+      bad ? `<span class="lb">${esc(bad.label)}</span>` : ""}</span>` +
+      (breaks && breaks.has(ci) ? '<span class="cbrk"></span>' : "");
   };
   const body = zhWords(s).map((w) => {
     const cells = Array.from(w).map(cell).join("");
@@ -430,7 +444,10 @@ function applyPBreaks() {
   playerPause();
   playerSetText(marked);
   playerRender();
-  if (pTurn) saveDialogEdit(pTurn.dialogId, pTurn.turnIdx, null, marked);
+  if (pTurn) {
+    saveDialogEdit(pTurn.dialogId, pTurn.turnIdx, null, marked);
+    if (dlgCur && dlgCur.id === pTurn.dialogId) renderDialogTurns();   // 本文にも区切りを出す
+  }
 }
 
 function togglePBreakEdit() {
@@ -1023,13 +1040,16 @@ const failName = (code) => (DIALOG_FAIL_LABELS.find((l) => l.code === code) || {
 
 // 中国語の訂正と、手で入れた区切り。キーは dialog_id|turn_idx
 const dlgEdits = new Map();
+const dlgRevealed = new Set();   // 再描画しても伏せ字に戻さない
+let dlgSyncOk = true;            // Supabase に書けているか
+let dlgPushed = 0;               // 端末内から吸い上げた件数
 const deKey = (id, t) => id + "|" + t;
 const turnZh = (t) => (dlgEdits.get(deKey(dlgCur.id, t.idx)) || {}).zh || t.zh;
 const turnMarked = (t) => (dlgEdits.get(deKey(dlgCur.id, t.idx)) || {}).marked || turnZh(t);
 
 async function loadDialogEdits() {
   let rows = null;
-  try { rows = await api("/api/dialog/edits"); } catch (e) { rows = null; }
+  try { rows = await api("/api/dialog/edits"); } catch (e) { rows = null; dlgSyncOk = false; }
   if (!rows) { try { rows = JSON.parse(localStorage.getItem("dlgEdits") || "[]"); } catch (e) { rows = []; } }
   dlgEdits.clear();
   rows.forEach((r) => dlgEdits.set(deKey(r.dialog_id, r.turn_idx), { zh: r.zh || "", marked: r.marked || "" }));
@@ -1047,20 +1067,50 @@ async function saveDialogEdit(id, turnIdx, zh, marked) {
     })));
   } catch (e) { /* noop */ }
   try { await api("/api/dialog/edit", { dialog_id: id, turn_idx: turnIdx, zh: row.zh, marked: row.marked }); }
-  catch (e) { /* 未マイグレーションでも端末内には残る */ }
+  catch (e) { dlgSyncOk = false; }   // 端末内には残る
 }
 
 function dfKey(id, t, ci) { return id + "|" + t + "|" + ci; }
 
 async function loadDialogFails() {
   let rows = null;
-  try { rows = await api("/api/dialog/fails"); } catch (e) { rows = null; }
+  try { rows = await api("/api/dialog/fails"); } catch (e) { rows = null; dlgSyncOk = false; }
   if (!rows) {
     try { rows = JSON.parse(localStorage.getItem("dlgFails") || "[]"); } catch (e) { rows = []; }
   }
   dlgFails.clear();
   rows.forEach((r) => dlgFails.set(dfKey(r.dialog_id, r.turn_idx, r.ci),
     { label: r.label || "Fail", char: r.char || "", syllable: r.syllable || "" }));
+}
+
+// テーブルが無い間は端末内にだけ溜まる。使えるようになったら一度だけ吸い上げて
+// 他の端末にも反映されるようにする。
+async function pushLocalPending() {
+  dlgPushed = 0;
+  if (!dlgSyncOk) return;
+  let fails = [], edits = [];
+  try { fails = JSON.parse(localStorage.getItem("dlgFails") || "[]"); } catch (e) { /* noop */ }
+  try { edits = JSON.parse(localStorage.getItem("dlgEdits") || "[]"); } catch (e) { /* noop */ }
+  for (const r of fails) {
+    const k = dfKey(r.dialog_id, r.turn_idx, r.ci);
+    if (dlgFails.has(k)) continue;
+    try {
+      await api("/api/dialog/fail", { dialog_id: r.dialog_id, turn_idx: r.turn_idx, ci: r.ci,
+        char: r.char || "", syllable: r.syllable || "", label: r.label || "Fail" });
+    } catch (e) { dlgSyncOk = false; return; }
+    dlgFails.set(k, { label: r.label || "Fail", char: r.char || "", syllable: r.syllable || "" });
+    dlgPushed++;
+  }
+  for (const r of edits) {
+    const k = deKey(r.dialog_id, r.turn_idx);
+    if (dlgEdits.has(k)) continue;
+    try {
+      await api("/api/dialog/edit", { dialog_id: r.dialog_id, turn_idx: r.turn_idx,
+        zh: r.zh || "", marked: r.marked || "" });
+    } catch (e) { dlgSyncOk = false; return; }
+    dlgEdits.set(k, { zh: r.zh || "", marked: r.marked || "" });
+    dlgPushed++;
+  }
 }
 
 function saveDialogFailsLocal() {
@@ -1086,7 +1136,7 @@ async function toggleDialogFail(cell, code) {
   try {
     await api(remove ? "/api/dialog/fail/delete" : "/api/dialog/fail",
       { dialog_id: dlgCur.id, turn_idx: t, ci, char: ch, syllable: py, label: code || "Fail" });
-  } catch (e) { /* 未マイグレーションでも端末内には残る */ }
+  } catch (e) { dlgSyncOk = false; }   // 端末内には残る
 }
 
 // 文字をタップ／右クリックしたときに出る「ミスの種類」ポップアップ
@@ -1158,9 +1208,17 @@ async function renderDialogList() {
   $("dlgList").innerHTML = '<div class="card"><span class="sub">読み込み中…</span></div>';
   try { await loadDialogs(); }
   catch (e) { $("dlgList").innerHTML = `<div class="card"><span class="msg ng">${esc(e.message)}</span></div>`; return; }
+  dlgSyncOk = true;
   await loadDialogFails();
   await loadDialogEdits();
+  await pushLocalPending();
   let h = '<div class="card"><h2>会話練習</h2>';
+  if (!dlgSyncOk) {
+    h += '<div class="msg ng" style="margin:0 0 8px">⚠️ この端末にだけ保存しています。'
+       + '他の端末には反映されません（dialog_fails / dialog_edits が未作成）。</div>';
+  } else if (dlgPushed) {
+    h += `<div class="msg ok" style="margin:0 0 8px">この端末に残っていた ${dlgPushed} 件を同期しました</div>`;
+  }
   dialogs.forEach((d) => {
     h += `<div class="dlgitem" data-id="${escA(d.id)}">
       <div><b>${esc(d.jp_title)}</b></div>
@@ -1179,6 +1237,7 @@ function openDialog(id) {
   $("dlgList").style.display = "none";
   $("dlgRoom").style.display = "";
   $("dlgTitle").textContent = d.jp_title;
+  dlgRevealed.clear();
   renderDialogTurns();
   renderDialogVocab();
   renderDialogWeak();
@@ -1188,10 +1247,10 @@ function openDialog(id) {
 function renderDialogTurns() {
   $("dlgTurns").innerHTML = dlgCur.turns.map((t) => {
     const mine = t.role === "me";
-    const mask = mine && dlgOpt.hideMe ? " masked" : "";
+    const mask = mine && dlgOpt.hideMe && !dlgRevealed.has(t.idx) ? " masked" : "";
     return `<div class="turn ${mine ? "me" : "other"}" data-idx="${t.idx}">
       <div class="bub">
-        <div class="zh${mask}${dlgOpt.showPy ? "" : " nopy"}">${zhGridHTML(turnZh(t), t.idx)}</div>
+        <div class="zh${mask}${dlgOpt.showPy ? "" : " nopy"}">${zhGridHTML(turnZh(t), t.idx, breaksFromMarked(turnMarked(t)))}</div>
         <div class="ja sub"${dlgOpt.showJa ? "" : " hidden"}>${esc(t.ja)}</div>
         <div class="tacts">
           <button class="icon tsay">🔊</button>
@@ -1268,7 +1327,10 @@ function clearTurnFails(id, turnIdx) {
   saveDialogFailsLocal();
 }
 
-function dlgReveal(el) { el.querySelectorAll(".masked").forEach((x) => x.classList.remove("masked")); }
+function dlgReveal(el) {
+  if (el.dataset.idx) dlgRevealed.add(+el.dataset.idx);
+  el.querySelectorAll(".masked").forEach((x) => x.classList.remove("masked"));
+}
 
 function dlgSpeak(text, el) {
   playerStop();
