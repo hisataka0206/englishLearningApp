@@ -184,7 +184,7 @@ export async function api(path, opts) {
     // ------------------------------------------------- 会話練習の修正
     case "/api/dialog/edits": {
       const { data, error } = await sb
-        .from("dialog_edits").select("dialog_id, turn_idx, zh, marked").limit(3000);
+        .from("dialog_edits").select("dialog_id, turn_idx, zh, marked, py").limit(3000);
       if (error) throw new Error(error.message);
       return data ?? [];
     }
@@ -193,7 +193,7 @@ export async function api(path, opts) {
       const { error } = await sb.from("dialog_edits").upsert({
         user_id: await uid(),
         dialog_id: opts.dialog_id, turn_idx: opts.turn_idx,
-        zh: opts.zh ?? "", marked: opts.marked ?? "",
+        zh: opts.zh ?? "", marked: opts.marked ?? "", py: opts.py ?? "",
         updated_at: new Date().toISOString(),
       }, { onConflict: "user_id,dialog_id,turn_idx" });
       if (error) throw new Error(error.message);

@@ -21,6 +21,8 @@
   .row { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; align-items:center; }
   #english { font-size:19px; line-height:1.5; min-height:28px; border:1px dashed transparent; border-radius:8px; padding:4px; }
   #english:focus { outline:none; border-color:var(--accent); background:#f8faff; }
+  #pinyin:focus { outline:none; border-color:var(--accent); background:#f8faff; }
+  #pinyin.edited { color:var(--accent); font-weight:600; }
   .kw { display:flex; align-items:center; gap:8px; padding:7px 4px; border-bottom:1px solid #f0f1f5; font-size:15px; }
   .kw:last-child { border-bottom:0; }
   .kw .m { color:var(--muted); font-size:13px; }
@@ -124,7 +126,14 @@
   <div class="card" id="resultCard" style="display:none">
     <h2 id="transHead">英訳（タップで編集可。「/」を入れるとその位置で発音を区切ります）</h2>
     <div id="english" contenteditable="true" oninput="englishEdited(this)"></div>
-    <div id="pinyin" style="color:var(--muted);font-size:13px;margin-top:2px"></div>
+    <div id="pinyinRow" style="display:none;align-items:center;gap:6px;margin-top:2px">
+      <div id="pinyin" contenteditable="true" oninput="pinyinEdited(this)"
+           title="拼音が違っていればタップして直せます"
+           style="color:var(--muted);font-size:13px;flex:1;
+                  border:1px dashed transparent;border-radius:6px;padding:2px 4px"></div>
+      <button class="small ghost" id="btnPyReset" onclick="resetPinyin()"
+              title="自動生成の拼音に戻す">↺</button>
+    </div>
     <div id="breakGrid" style="display:none"></div>
     <div class="row">
       <button class="ghost" id="btnSpeak" onclick="playerLoad(current.marked || current.english)" title="発音">🔊</button>
@@ -289,8 +298,12 @@ function setLang(l) {
   document.getElementById("btnMainBreak").style.display = jaMode ? "none" : "";
   // 前の言語の結果をクリア（保留中の自動保存が新しい lang で走らないよう止める）
   clearTimeout(autoSaveTimer);
-  current = { japanese:"", english:"", marked:"", keywords:[], pageId:null };
+  current = { japanese:"", english:"", marked:"", keywords:[], pageId:null,
+              pinyin:"", pinyinManual:false };
   document.getElementById("ja").value = "";
+  document.getElementById("pinyin").textContent = "";
+  document.getElementById("pinyin").classList.remove("edited");
+  document.getElementById("pinyinRow").style.display = "none";
   document.getElementById("resultCard").style.display = "none";
   resetMainBreak();
   playerClose();
@@ -523,7 +536,7 @@ function resetMainBreak() {
   const b = document.getElementById("btnMainBreak");
   if (b) b.classList.remove("active");
   document.getElementById("english").style.display = "";
-  document.getElementById("pinyin").style.display = "";
+  document.getElementById("pinyinRow").style.display = lang === "zh" ? "flex" : "none";
   document.getElementById("breakGrid").style.display = "none";
 }
 
@@ -531,7 +544,8 @@ async function toggleMainBreakEdit() {
   mainBreakMode = !mainBreakMode;
   document.getElementById("btnMainBreak").classList.toggle("active", mainBreakMode);
   document.getElementById("english").style.display = mainBreakMode ? "none" : "";
-  document.getElementById("pinyin").style.display = mainBreakMode ? "none" : "";
+  document.getElementById("pinyinRow").style.display =
+    (mainBreakMode || lang !== "zh") ? "none" : "flex";
   document.getElementById("breakGrid").style.display = mainBreakMode ? "" : "none";
   if (mainBreakMode) {
     if (lang === "zh") {  // 単語分割を先に取得（自動の単語区切りを初期表示するため）
@@ -602,15 +616,44 @@ function toggleMainBreak(pos) {
   scheduleAutoSave();  // 区切りの変更も同じIDに上書き保存
 }
 
+// ---- 拼音（自動生成 ＋ 手修正） ----
+// 多音字は自動生成が外すことがあるので、手で直したらそれを正として保存し、
+// 以後の自動生成では上書きしない（↺ で自動に戻せる）。
+function setPinyin(text, manual) {
+  current.pinyin = text || "";
+  current.pinyinManual = !!manual;
+  const el = document.getElementById("pinyin");
+  if (el.textContent !== current.pinyin) el.textContent = current.pinyin;
+  el.classList.toggle("edited", current.pinyinManual);
+  document.getElementById("pinyinRow").style.display = lang === "zh" ? "flex" : "none";
+}
+
+function pinyinEdited(el) {
+  current.pinyin = el.textContent.replace(/\s+/g, " ").trim();
+  current.pinyinManual = true;
+  el.classList.add("edited");
+  scheduleAutoSave();  // 手修正も同じIDに上書き保存
+}
+
+function resetPinyin() {
+  current.pinyinManual = false;
+  document.getElementById("pinyin").classList.remove("edited");
+  refreshPinyin(true);
+}
+
 let pinyinTimer = null;
-function refreshPinyin() {
-  if (lang !== "zh") return;
+function refreshPinyin(force) {
+  if (lang !== "zh") { document.getElementById("pinyinRow").style.display = "none"; return; }
+  document.getElementById("pinyinRow").style.display = "flex";
+  if (current.pinyinManual && !force) return;  // 手修正を自動生成で踏み潰さない
   clearTimeout(pinyinTimer);
   pinyinTimer = setTimeout(() => {
     const text = current.english;
     api("/api/pinyin", { texts: [text] }).then(d => {
-      if (current.english === text)
-        document.getElementById("pinyin").textContent = d.pinyins[0] || "";
+      if (current.english !== text) return;
+      if (current.pinyinManual && !force) return;
+      setPinyin(d.pinyins[0] || "", false);
+      if (force) scheduleAutoSave();  // 自動に戻したことを保存に反映
     }).catch(() => {});
   }, 400);
 }
@@ -716,11 +759,12 @@ async function doTranslate() {
   try {
     const model = document.getElementById("model").value;
     const d = await api("/api/translate", { japanese: ja, model, lang });
-    current = { japanese: ja, english: d.english, marked: d.english, keywords: [], pageId: null };
+    current = { japanese: ja, english: d.english, marked: d.english, keywords: [], pageId: null,
+                pinyin: "", pinyinManual: false };
     resetMainBreak();
     document.getElementById("resultCard").style.display = "";
     document.getElementById("english").textContent = d.english;
-    document.getElementById("pinyin").textContent = d.pinyin || "";
+    setPinyin(d.pinyin || "", false);
     document.getElementById("kwBox").innerHTML = "<span style='color:var(--muted);font-size:13px'>キーワード抽出中…</span>";
     document.getElementById("kwActions").style.display = "none";
     msg("msgTr", "", true); msg("msgSave", "", true);
@@ -760,7 +804,9 @@ async function saveSentence() {
   const btn = document.getElementById("btnSave");
   btn.disabled = true; msg("msgSave", "保存中…", true);
   try {
-    const payload = { japanese: current.japanese, english: current.english, marked: current.marked, lang };
+    const payload = { japanese: current.japanese, english: current.english, marked: current.marked, lang,
+                      // 手で直した拼音があればそれを保存する（無ければサーバ側で自動生成）
+                      pinyin: (lang === "zh" && current.pinyinManual) ? current.pinyin : null };
     if (current.pageId) payload.id = current.pageId;  // 呼び出した英文は同じIDに上書き
     const d = await api("/api/sentences", payload);
     current.pageId = d.id;
@@ -779,10 +825,13 @@ function scheduleAutoSave() {
 // 入力・結果・IDをすべて捨てて、新しい文を書き始める
 function clearCompose() {
   clearTimeout(autoSaveTimer);
-  current = { japanese:"", english:"", marked:"", keywords:[], pageId:null };
+  current = { japanese:"", english:"", marked:"", keywords:[], pageId:null,
+              pinyin:"", pinyinManual:false };
   document.getElementById("ja").value = "";
   document.getElementById("english").textContent = "";
   document.getElementById("pinyin").textContent = "";
+  document.getElementById("pinyin").classList.remove("edited");
+  document.getElementById("pinyinRow").style.display = "none";
   document.getElementById("kwBox").innerHTML = "";
   document.getElementById("kwActions").style.display = "none";
   document.getElementById("resultCard").style.display = "none";
@@ -815,11 +864,13 @@ async function study(id) {
   showView("main"); setSub("compose");
   document.getElementById("ja").value = s.japanese;
   current = { japanese: s.japanese, english: s.english,
-              marked: s.marked || s.english, keywords: [], pageId: id };
+              marked: s.marked || s.english, keywords: [], pageId: id,
+              pinyin: "", pinyinManual: false };
   resetMainBreak();
   document.getElementById("resultCard").style.display = "";
   document.getElementById("english").textContent = current.marked;
-  document.getElementById("pinyin").textContent = s.pinyin || "";
+  // 保存済みの拼音は手修正の可能性があるので、そのまま正として扱う
+  setPinyin(s.pinyin || "", !!s.pinyin);
   document.getElementById("btnSave").disabled = true;
   msg("msgSave", L().restudy, true);
   document.getElementById("kwBox").innerHTML =

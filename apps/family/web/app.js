@@ -83,15 +83,17 @@ function breaksFromMarked(marked) {
 function zhGridHTML(text, turnIdx, breaks) {
   const s = String(text == null ? "" : text).replace(/\s+/g, "");
   const py = charPinyin(s);
+  const ov = turnIdx != null && dlgCur ? pyMapOf(turnIdx) : null;   // 手で直した読み
   let i = 0;
   const cell = (ch) => {
-    const p = py[i] || "";
     const ci = i++;
+    const fixed = ov && ov[String(ci)] != null;
+    const p = fixed ? ov[String(ci)] : (py[ci] || "");
     if (turnIdx == null) {
       return `<span class="cchar"><span class="py">${esc(p)}</span><span class="hz">${esc(ch)}</span></span>`;
     }
     const bad = dlgCur && dlgFails.get(dfKey(dlgCur.id, turnIdx, ci));
-    return `<span class="cchar${bad ? " failed" : ""}" data-t="${turnIdx}" data-ci="${ci}"
+    return `<span class="cchar${bad ? " failed" : ""}${fixed ? " pyfix" : ""}" data-t="${turnIdx}" data-ci="${ci}"
       data-ch="${escA(ch)}" data-py="${escA(p)}"><span class="py">${esc(p)}</span><span class="hz">${esc(ch)}</span>${
       bad ? `<span class="lb">${esc(bad.label)}</span>` : ""}</span>` +
       (breaks && breaks.has(ci) ? '<span class="cbrk"></span>' : "");
@@ -481,7 +483,8 @@ function resetMainBreak() {
   mainBreakMode = false; current._breaks = null;
   explicitBreaks = /[/|｜／]/.test(current.marked || "");
   $("btnMainBreak")?.classList.remove("active");
-  $("english").style.display = ""; $("pinyin").style.display = "";
+  $("english").style.display = "";
+  $("pinyinRow").style.display = lang === "zh" ? "flex" : "none";
   $("breakGrid").style.display = "none";
 }
 
@@ -489,7 +492,7 @@ function toggleMainBreakEdit() {
   mainBreakMode = !mainBreakMode;
   $("btnMainBreak").classList.toggle("active", mainBreakMode);
   $("english").style.display = mainBreakMode ? "none" : "";
-  $("pinyin").style.display = mainBreakMode ? "none" : "";
+  $("pinyinRow").style.display = (mainBreakMode || lang !== "zh") ? "none" : "flex";
   $("breakGrid").style.display = mainBreakMode ? "" : "none";
   if (mainBreakMode) {
     if (!current._breaks) current._breaks = deriveMainBreaks();
@@ -555,11 +558,12 @@ async function doTranslate() {
   msg("msgTr", "翻訳中…", true);
   try {
     const d = await api("/api/translate", { japanese: ja, lang });
-    current = { japanese: ja, english: d.target, marked: d.target, keywords: [], pageId: null, _breaks: null };
+    current = { japanese: ja, english: d.target, marked: d.target, keywords: [], pageId: null, _breaks: null,
+                pinyin: "", pinyinManual: false };
     resetMainBreak();
     $("resultCard").style.display = "";
     $("english").textContent = d.target;
-    $("pinyin").textContent = lang === "zh" ? pinyinOf(d.target) : "";
+    setPinyin(lang === "zh" ? pinyinOf(d.target) : "", false);
     $("kwBox").innerHTML = "<span class='sub'>キーワード抽出中…</span>";
     $("kwActions").style.display = "none";
     msg("msgTr", "", true); msg("msgSave", "", true);
@@ -603,8 +607,34 @@ function englishEdited(el) {
   explicitBreaks = /[/|｜／]/.test(current.marked);
   $("btnSave").disabled = false;
   playerSync();
-  if (lang === "zh") $("pinyin").textContent = pinyinOf(current.english);
+  // 手修正した拼音は自動生成で踏み潰さない
+  if (lang === "zh" && !current.pinyinManual) setPinyin(pinyinOf(current.english), false);
   scheduleAutoSave();  // 同じIDに上書き保存
+}
+
+// ---- 拼音（自動生成 ＋ 手修正） ----
+// 多音字は自動生成が外すことがあるので、手で直したらそれを正として保存し、
+// 以後の自動生成では上書きしない（↺ で自動に戻せる）。
+function setPinyin(text, manual) {
+  current.pinyin = text || "";
+  current.pinyinManual = !!manual;
+  const el = $("pinyin");
+  if (el.textContent !== current.pinyin) el.textContent = current.pinyin;
+  el.classList.toggle("edited", current.pinyinManual);
+  $("pinyinRow").style.display = lang === "zh" ? "flex" : "none";
+}
+
+function pinyinEdited(el) {
+  current.pinyin = el.textContent.replace(/\s+/g, " ").trim();
+  current.pinyinManual = true;
+  el.classList.add("edited");
+  scheduleAutoSave();   // 手修正も同じIDに上書き保存
+}
+
+function resetPinyin() {
+  if (lang !== "zh") return;
+  setPinyin(pinyinOf(current.english), false);
+  scheduleAutoSave();   // 自動に戻したことを保存に反映
 }
 
 // 編集したら少し待って同じIDに上書き保存する（連続入力で叩かないようデバウンス）
@@ -617,10 +647,13 @@ function scheduleAutoSave() {
 // 入力・結果・IDをすべて捨てて、新しい文を書き始める
 function clearCompose() {
   clearTimeout(autoSaveTimer);
-  current = { japanese: "", english: "", marked: "", keywords: [], pageId: null, _breaks: null };
+  current = { japanese: "", english: "", marked: "", keywords: [], pageId: null, _breaks: null,
+              pinyin: "", pinyinManual: false };
   $("ja").value = "";
   $("english").textContent = "";
   $("pinyin").textContent = "";
+  $("pinyin").classList.remove("edited");
+  $("pinyinRow").style.display = "none";
   $("kwBox").innerHTML = "";
   $("kwActions").style.display = "none";
   $("resultCard").style.display = "none";
@@ -637,7 +670,8 @@ async function saveSentence() {
     const payload = {
       japanese: current.japanese, english: current.english,
       marked: current.marked, lang,
-      pinyin: lang === "zh" ? pinyinOf(current.english) : null,
+      // 手で直した拼音があればそれを保存する
+      pinyin: lang === "zh" ? (current.pinyin || pinyinOf(current.english)) : null,
     };
     if (current.pageId) payload.id = current.pageId;
     const d = await api("/api/sentences", payload);
@@ -741,11 +775,12 @@ async function study(id) {
   go("/"); setSub("compose");
   $("ja").value = s.japanese;
   current = { japanese: s.japanese, english: s.english, marked: s.marked || s.english,
-              keywords: [], pageId: id, _breaks: null };
+              keywords: [], pageId: id, _breaks: null, pinyin: "", pinyinManual: false };
   resetMainBreak();
   $("resultCard").style.display = "";
   $("english").textContent = current.marked;
-  $("pinyin").textContent = s.pinyin || (lang === "zh" ? pinyinOf(s.english) : "");
+  // 保存済みの拼音は手修正の可能性があるので、そのまま正として扱う
+  setPinyin(s.pinyin || (lang === "zh" ? pinyinOf(s.english) : ""), !!s.pinyin);
   $("btnSave").disabled = true;
   msg("msgSave", L().restudy, true);
   $("kwBox").innerHTML = "<span class='sub'>キーワード抽出中…</span>";
@@ -799,8 +834,12 @@ async function setLang(l) {
   $("btnMainBreak").style.display = jaMode ? "none" : "";
   // 言語を変えたら前の結果は破棄する（保留中の自動保存が新しい lang で走らないよう止める）
   clearTimeout(autoSaveTimer);
-  current = { japanese: "", english: "", marked: "", keywords: [], pageId: null, _breaks: null };
+  current = { japanese: "", english: "", marked: "", keywords: [], pageId: null, _breaks: null,
+              pinyin: "", pinyinManual: false };
   $("ja").value = "";
+  $("pinyin").textContent = "";
+  $("pinyin").classList.remove("edited");
+  $("pinyinRow").style.display = "none";
   $("resultCard").style.display = "none";
   resetMainBreak(); playerClose();
   saveSetting({ default_lang: lang });
@@ -1047,27 +1086,49 @@ const deKey = (id, t) => id + "|" + t;
 const turnZh = (t) => (dlgEdits.get(deKey(dlgCur.id, t.idx)) || {}).zh || t.zh;
 const turnMarked = (t) => (dlgEdits.get(deKey(dlgCur.id, t.idx)) || {}).marked || turnZh(t);
 
+// 拼音の手修正。ターン内の {文字位置: 読み}。多音字を自動生成が外したとき用。
+function pyMapOf(turnIdx) {
+  const raw = (dlgEdits.get(deKey(dlgCur.id, turnIdx)) || {}).py || "";
+  if (!raw) return null;
+  try { const o = JSON.parse(raw); return o && typeof o === "object" ? o : null; } catch (e) { return null; }
+}
+
+async function setCharPinyin(turnIdx, ci, value) {
+  const m = pyMapOf(turnIdx) || {};
+  if (value) m[String(ci)] = value; else delete m[String(ci)];
+  const py = Object.keys(m).length ? JSON.stringify(m) : "";
+  await saveDialogEdit(dlgCur.id, turnIdx, null, null, py);
+  renderDialogTurns();
+}
+
 async function loadDialogEdits() {
   let rows = null;
   try { rows = await api("/api/dialog/edits"); } catch (e) { rows = null; dlgSyncOk = false; }
   if (!rows) { try { rows = JSON.parse(localStorage.getItem("dlgEdits") || "[]"); } catch (e) { rows = []; } }
   dlgEdits.clear();
-  rows.forEach((r) => dlgEdits.set(deKey(r.dialog_id, r.turn_idx), { zh: r.zh || "", marked: r.marked || "" }));
+  rows.forEach((r) => dlgEdits.set(deKey(r.dialog_id, r.turn_idx),
+    { zh: r.zh || "", marked: r.marked || "", py: r.py || "" }));
 }
 
-async function saveDialogEdit(id, turnIdx, zh, marked) {
-  const cur = dlgEdits.get(deKey(id, turnIdx)) || { zh: "", marked: "" };
-  const row = { zh: zh == null ? cur.zh : zh, marked: marked == null ? cur.marked : marked };
-  if (!row.zh && !row.marked) dlgEdits.delete(deKey(id, turnIdx));
+async function saveDialogEdit(id, turnIdx, zh, marked, py) {
+  const cur = dlgEdits.get(deKey(id, turnIdx)) || { zh: "", marked: "", py: "" };
+  const row = {
+    zh: zh == null ? cur.zh : zh,
+    marked: marked == null ? cur.marked : marked,
+    py: py == null ? (cur.py || "") : py,
+  };
+  if (!row.zh && !row.marked && !row.py) dlgEdits.delete(deKey(id, turnIdx));
   else dlgEdits.set(deKey(id, turnIdx), row);
   try {
     localStorage.setItem("dlgEdits", JSON.stringify([...dlgEdits.entries()].map(([k, v]) => {
       const p = k.split("|");
-      return { dialog_id: p[0], turn_idx: +p[1], zh: v.zh, marked: v.marked };
+      return { dialog_id: p[0], turn_idx: +p[1], zh: v.zh, marked: v.marked, py: v.py || "" };
     })));
   } catch (e) { /* noop */ }
-  try { await api("/api/dialog/edit", { dialog_id: id, turn_idx: turnIdx, zh: row.zh, marked: row.marked }); }
-  catch (e) { dlgSyncOk = false; }   // 端末内には残る
+  try {
+    await api("/api/dialog/edit",
+      { dialog_id: id, turn_idx: turnIdx, zh: row.zh, marked: row.marked, py: row.py });
+  } catch (e) { dlgSyncOk = false; }   // 端末内には残る
 }
 
 function dfKey(id, t, ci) { return id + "|" + t + "|" + ci; }
@@ -1153,6 +1214,25 @@ function openFailPop(cell) {
     closeFailPop();
     toggleDialogFail(cell, b.dataset.code || null);
   });
+
+  // 拼音の手直し。多音字を自動生成が外したときはここで正す。
+  const t = +cell.dataset.t, ci = +cell.dataset.ci;
+  const ov = pyMapOf(t);
+  const fixed = ov && ov[String(ci)] != null;
+  $("dfPopPy").innerHTML =
+    `<input class="pyin" value="${escA(cell.dataset.py)}" spellcheck="false">
+     <button class="fbtn pysave">拼音を直す</button>
+     ${fixed ? '<button class="fbtn rm pyreset">↺ 自動に戻す</button>' : ""}`;
+  const inp = $("dfPopPy").querySelector(".pyin");
+  const commit = () => {
+    const v = inp.value.trim();
+    closeFailPop();
+    setCharPinyin(t, ci, v || null);   // 空にすれば自動生成に戻る
+  };
+  $("dfPopPy").querySelector(".pysave").onclick = commit;
+  inp.onkeydown = (ev) => { if (ev.key === "Enter") { ev.preventDefault(); commit(); } };
+  const rs = $("dfPopPy").querySelector(".pyreset");
+  if (rs) rs.onclick = () => { closeFailPop(); setCharPinyin(t, ci, null); };
   pop.style.display = "";
   const r = cell.getBoundingClientRect();
   const w = pop.offsetWidth, hgt = pop.offsetHeight;
@@ -1305,12 +1385,12 @@ function openTurnEdit(el, t) {
     const v = ta.value.replace(/\s+/g, "").trim();
     if (!v) return close();
     if (v !== turnZh(t)) clearTurnFails(dlgCur.id, t.idx);   // 文字位置がずれるので、その行のミスは外す
-    await saveDialogEdit(dlgCur.id, t.idx, v === t.zh ? "" : v, "");
+    await saveDialogEdit(dlgCur.id, t.idx, v === t.zh ? "" : v, "", "");
     close(); renderDialogTurns(); renderDialogWeak();
   };
   box.querySelector(".treset").onclick = async () => {
     clearTurnFails(dlgCur.id, t.idx);
-    await saveDialogEdit(dlgCur.id, t.idx, "", "");
+    await saveDialogEdit(dlgCur.id, t.idx, "", "", "");
     close(); renderDialogTurns(); renderDialogWeak();
   };
 }
@@ -1415,6 +1495,8 @@ async function boot() {
   $("sub_compose").onclick = () => go("/");
   $("sub_history").onclick = () => go("/history");
   $("english").oninput = (e) => englishEdited(e.target);
+  $("pinyin").oninput = (e) => pinyinEdited(e.target);
+  $("btnPyReset").onclick = resetPinyin;
   $("btnSpeak").onclick = () => playerLoad(current.marked || current.english);
   $("btnMainBreak").onclick = toggleMainBreakEdit;
   $("btnNew").onclick = clearCompose;

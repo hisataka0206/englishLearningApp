@@ -30,6 +30,9 @@
   .row { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; align-items:center; }
   #english { font-size:19px; line-height:1.5; min-height:28px; border:1px dashed transparent; border-radius:8px; padding:4px; }
   #english:focus { outline:none; border-color:var(--accent); background:#f8faff; }
+  #pinyin { border:1px dashed transparent; border-radius:6px; padding:2px 4px; }
+  #pinyin:focus { outline:none; border-color:var(--accent); background:#f8faff; }
+  #pinyin.edited { color:var(--accent); font-weight:600; }
   .kw { display:flex; align-items:center; gap:8px; padding:7px 4px; border-bottom:1px solid #f0f1f5; font-size:15px; }
   .kw:last-child { border-bottom:0; }
   .kw .m { color:var(--muted); font-size:13px; }
@@ -109,6 +112,11 @@
   .fbtn { background:#eef1f8; border:0; border-radius:8px; padding:7px 10px; font-size:13px; cursor:pointer; }
   .fbtn.on { background:var(--accent); color:#fff; }
   .fbtn.rm { background:#fdecec; color:var(--ng); }
+  #dfPopPy { display:flex; flex-wrap:wrap; gap:6px; align-items:center;
+    margin-top:8px; padding-top:8px; border-top:1px solid #eef1f8; }
+  #dfPopPy .pyin { flex:1; min-width:96px; font-size:14px; padding:6px 8px;
+    border:1px solid #d8dce6; border-radius:8px; }
+  .cchar.pyfix .py { color:var(--ok); font-weight:700; }
   .tedit-box { margin-top:8px; }
   .tedit-box .te { width:100%; font-size:17px; border:1px solid var(--accent);
     border-radius:10px; padding:8px; min-height:64px; }
@@ -175,7 +183,11 @@
     <div class="card" id="resultCard" style="display:none">
       <h2 id="transHead">英訳 ✏️</h2>
       <div id="english" contenteditable="true"></div>
-      <div id="pinyin" class="sub" style="margin-top:2px"></div>
+      <div id="pinyinRow" style="display:none;align-items:center;gap:6px;margin-top:2px">
+        <div id="pinyin" class="sub" contenteditable="true"
+             title="拼音が違っていればタップして直せます" style="flex:1"></div>
+        <button class="small ghost" id="btnPyReset" title="自動生成の拼音に戻す">↺</button>
+      </div>
       <div id="breakGrid" style="display:none"></div>
       <div class="row">
         <button class="ghost" id="btnSpeak" title="発音">🔊</button>
@@ -266,6 +278,7 @@
 <div id="dfPop" style="display:none">
   <div id="dfPopChar"></div>
   <div id="dfPopBtns"></div>
+  <div id="dfPopPy"></div>
 </div>
 
 <!-- ============================================ プレイヤー -->

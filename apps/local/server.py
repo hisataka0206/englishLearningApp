@@ -276,8 +276,12 @@ def migrate_ids():
             regen_markdown()
 
 
-def update_sentence(sentence_id, japanese, english, memo="", marked=""):
-    """既存の文を上書き（実施履歴・fail履歴・登録日は保持）。IDで両言語から検索。"""
+def update_sentence(sentence_id, japanese, english, memo="", marked="", pinyin=None):
+    """既存の文を上書き（実施履歴・fail履歴・登録日は保持）。IDで両言語から検索。
+
+    pinyin を渡すと手修正版として採用する。多音字を自動生成が外すことがあるため、
+    一度直した拼音を自動生成で踏み潰さないのが狙い（None のときだけ自動生成）。
+    """
     with LOCK:
         for fname in SENT_FILES:
             items = _load(fname)
@@ -289,21 +293,21 @@ def update_sentence(sentence_id, japanese, english, memo="", marked=""):
                     if memo:
                         s["memo"] = memo
                     if fname == "sentences_zh.json":
-                        s["pinyin"] = to_pinyin(english)
+                        s["pinyin"] = pinyin if pinyin else to_pinyin(english)
                     _save(fname, items)
                     regen_markdown()
                     return {"id": sentence_id, "updated": True}, None
     return None, "sentence not found"
 
 
-def save_sentence(japanese, english, memo="", marked="", lang="en"):
+def save_sentence(japanese, english, memo="", marked="", lang="en", pinyin=None):
     with LOCK:
         items = _load(sname(lang))
         rec = {"id": uuid.uuid4().hex, "japanese": japanese, "english": english,
                "marked": marked or english,  # 「/」区切り位置付きの原文
                "memo": memo, "created": now(), "fails": []}
         if lang == "zh":
-            rec["pinyin"] = to_pinyin(english)
+            rec["pinyin"] = pinyin if pinyin else to_pinyin(english)
         items.append(rec)
         _save(sname(lang), items)
         regen_markdown()
@@ -1262,14 +1266,15 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/sentences":
             if not body.get("english"):
                 return self._fail("english is required", 400)
+            pinyin = (body.get("pinyin") or "").strip() or None  # 手修正版があれば優先
             if body.get("id"):  # ID指定なら上書き
                 data, err = update_sentence(body["id"], body.get("japanese", ""),
                                             body["english"], body.get("memo", ""),
-                                            body.get("marked", ""))
+                                            body.get("marked", ""), pinyin)
             else:
                 data, err = save_sentence(body.get("japanese", ""), body["english"],
                                           body.get("memo", ""), body.get("marked", ""),
-                                          lang)
+                                          lang, pinyin)
         elif self.path == "/api/words/delete":
             if not body.get("id"):
                 return self._fail("id is required", 400)
