@@ -1086,6 +1086,34 @@ const deKey = (id, t) => id + "|" + t;
 const turnZh = (t) => (dlgEdits.get(deKey(dlgCur.id, t.idx)) || {}).zh || t.zh;
 const turnMarked = (t) => (dlgEdits.get(deKey(dlgCur.id, t.idx)) || {}).marked || turnZh(t);
 
+// 声調記号（ǎ など）はMacでもiPhoneでも普通のキーボードから打てないので、
+// 「wei2」のような数字つきで入力させて、ここで「wéi」に直す。
+// 声調の付く母音は a > o > e の順。iu は u に、ui は i に付ける。
+const PY_TONES = {
+  a: "āáǎà", o: "ōóǒò", e: "ēéěè",
+  i: "īíǐì", u: "ūúǔù", "ü": "ǖǘǚǜ",
+};
+function pyNum2Mark(tok) {
+  const m = /^([a-zA-ZüÜvV]+)([0-5])$/.exec(tok);
+  if (!m) return tok;
+  const w = m[1].toLowerCase().replace(/v/g, "ü");
+  const t = +m[2];
+  if (!t || t === 5) return w;            // 軽声は記号なし
+  let i = w.indexOf("a");
+  if (i < 0) i = w.indexOf("o");
+  if (i < 0) i = w.indexOf("e");
+  if (i < 0) {
+    const iu = w.indexOf("iu"), ui = w.indexOf("ui");
+    if (iu >= 0) i = iu + 1;
+    else if (ui >= 0) i = ui + 1;
+    else i = w.search(/[iuü]/);
+  }
+  if (i < 0) return w;
+  const set = PY_TONES[w[i]];
+  return set ? w.slice(0, i) + set[t - 1] + w.slice(i + 1) : w;
+}
+const pyNormalize = (v) => String(v == null ? "" : v).trim().split(/\s+/).map(pyNum2Mark).join(" ").trim();
+
 // 拼音の手修正。ターン内の {文字位置: 読み}。多音字を自動生成が外したとき用。
 function pyMapOf(turnIdx) {
   const raw = (dlgEdits.get(deKey(dlgCur.id, turnIdx)) || {}).py || "";
@@ -1220,14 +1248,23 @@ function openFailPop(cell) {
   const ov = pyMapOf(t);
   const fixed = ov && ov[String(ci)] != null;
   $("dfPopPy").innerHTML =
-    `<input class="pyin" value="${escA(cell.dataset.py)}" spellcheck="false">
+    `<input class="pyin" value="${escA(cell.dataset.py)}" spellcheck="false"
+            autocapitalize="off" autocorrect="off" inputmode="latin">
+     <span class="pyprev"></span>
      <button class="fbtn pysave">拼音を直す</button>
      ${fixed ? '<button class="fbtn rm pyreset">↺ 自動に戻す</button>' : ""}`;
   const inp = $("dfPopPy").querySelector(".pyin");
+  const prev = $("dfPopPy").querySelector(".pyprev");
+  const preview = () => {
+    const v = pyNormalize(inp.value);
+    prev.textContent = v && v !== inp.value.trim() ? "→ " + v : "";
+  };
+  inp.oninput = preview;
+  preview();
   const commit = () => {
-    const v = inp.value.trim();
+    const v = pyNormalize(inp.value);   // wei2 → wéi
     closeFailPop();
-    setCharPinyin(t, ci, v || null);   // 空にすれば自動生成に戻る
+    setCharPinyin(t, ci, v || null);    // 空にすれば自動生成に戻る
   };
   $("dfPopPy").querySelector(".pysave").onclick = commit;
   inp.onkeydown = (ev) => { if (ev.key === "Enter") { ev.preventDefault(); commit(); } };
