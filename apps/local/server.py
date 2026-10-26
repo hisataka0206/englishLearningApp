@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.39.1"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.40.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -397,6 +397,425 @@ def save_word(word, meaning, example="", source_id=None, lang="en"):
 # ---------------------------------------------------------------- articles
 def _articles():
     return _load("articles_zh.json")
+
+
+# ============================================================ 会話練習
+# 記事と同じ形（sentences / vocab / fails / breaks）で持つので、
+# 画面側は記事の描画・ミス記録の仕組みをそのまま使える。
+# 保存先は data/dialogs_zh.json（この端末の中だけ。Notionには送らない）。
+def _dialogs():
+    return _load("dialogs_zh.json")
+
+
+def dialogs_list():
+    out = []
+    for d in _dialogs():
+        out.append({
+            "id": d["id"], "title": d.get("title", ""),
+            "jp_title": d.get("jp_title", ""), "zh_title": d.get("zh_title", ""),
+            "scene": d.get("scene", ""),
+            "turns": len(d.get("sentences", [])),
+            "total_chars": d.get("total_chars", 0),
+            "vocab": len(d.get("vocab", [])),
+            "fails": len(d.get("fails", [])),
+        })
+    return out, None
+
+
+def dialogs_get(dialog_id):
+    for d in _dialogs():
+        if d["id"] == dialog_id:
+            return d, None
+    return None, "dialog not found"
+
+
+def _dialog_apply(dialog_id, fn):
+    """dialogs_zh.json の1件を書き換えて保存する。fn(d) が返した値を結果にする。"""
+    if not dialog_id:
+        return None, "dialog_id is required"
+    with LOCK:
+        ds = _dialogs()
+        for d in ds:
+            if d["id"] != dialog_id:
+                continue
+            out = fn(d)
+            _save("dialogs_zh.json", ds)
+            return out, None
+    return None, "dialog not found"
+
+
+def dialog_fail(dialog_id, idx, ci, char="", syllable="", label="F",
+                scope=FAIL_SCOPE_SENT):
+    """会話の1文字にミスを記録（同じ文字は上書き）。"""
+    if idx is None or ci is None:
+        return None, "idx, ci are required"
+    scope = scope if scope in (FAIL_SCOPE_SENT, FAIL_SCOPE_VOCAB) else FAIL_SCOPE_SENT
+
+    def apply(d):
+        fails = d.setdefault("fails", [])
+        for f in fails:
+            if fail_scope(f) == scope and f["idx"] == idx and f.get("ci") == ci:
+                f["label"] = label
+                f["time"] = now()
+                break
+        else:
+            fails.append({"scope": scope, "idx": idx, "ci": ci, "char": char,
+                          "syllable": syllable, "label": label, "time": now()})
+        return {"fails": len(fails)}
+
+    return _dialog_apply(dialog_id, apply)
+
+
+def dialog_unfail(dialog_id, idx, ci, scope=FAIL_SCOPE_SENT):
+    def apply(d):
+        d["fails"] = [f for f in d.get("fails", [])
+                      if not (fail_scope(f) == scope and f["idx"] == idx and f.get("ci") == ci)]
+        return {"fails": len(d["fails"])}
+
+    return _dialog_apply(dialog_id, apply)
+
+
+def dialog_set_breaks(dialog_id, idx, breaks):
+    """そのターンの区切り位置（文字indexの配列）を保存する。"""
+    def apply(d):
+        for s in d.get("sentences", []):
+            if s.get("idx") == idx:
+                s["breaks"] = sorted(set(int(b) for b in breaks))
+                return {"idx": idx, "breaks": s["breaks"]}
+        return {"idx": idx, "breaks": []}
+
+    return _dialog_apply(dialog_id, apply)
+
+
+def dialog_set_text(dialog_id, idx, zh=None, pairs=None, py=None):
+    """中国語の訂正と、1文字ごとの拼音の手直しを保存する。
+
+    zh を変えると文字位置がずれるため、そのターンのミスと区切りは落とす。
+    """
+    def apply(d):
+        nonlocal pairs
+        for s in d.get("sentences", []):
+            if s.get("idx") != idx:
+                continue
+            if zh is not None and zh != s.get("zh"):
+                s["zh"] = zh
+                s["breaks"] = []
+                d["fails"] = [f for f in d.get("fails", [])
+                              if not (fail_scope(f) == FAIL_SCOPE_SENT and f["idx"] == idx)]
+                if pairs is None:
+                    try:
+                        pairs = to_pinyin_pairs(zh)     # 拼音は自動で振り直す
+                    except Exception:                   # pypinyin が無い環境でも落とさない
+                        pairs = [[c, ""] for c in zh]
+            if pairs is not None:
+                s["pairs"] = [list(p) for p in pairs]
+            if py is not None:          # {"3": "háng"} 形式の手直し
+                for k, v in (py or {}).items():
+                    i = int(k)
+                    if 0 <= i < len(s.get("pairs", [])):
+                        s["pairs"][i][1] = v
+            return {"idx": idx, "zh": s.get("zh", ""), "pairs": s.get("pairs", [])}
+        return {"idx": idx}
+
+    return _dialog_apply(dialog_id, apply)
+
+
+# ------------------------------------------------------------ 専門用語集（glossary）
+GLOSS_FILE = "glossary_zh.json"
+
+# 分類は固定12種。「一般」は画面側でON/OFFできる受け皿。
+GLOSS_CATS = [
+    "ロボット本体・種別",
+    "モーター・駆動",
+    "減速・伝動・機構",
+    "センサー・知覚",
+    "AI・制御",
+    "材料・構造・熱",
+    "製造・量産",
+    "規格・安全",
+    "サプライチェーン",
+    "資本・市場",
+    "固有名詞",
+    "一般",
+]
+
+_TONE = {
+    "a": "āáǎà", "e": "ēéěè", "i": "īíǐì",
+    "o": "ōóǒò", "u": "ūúǔù", "ü": "ǖǘǚǜ",
+}
+
+
+def _mark_syllable(syl, tone):
+    """shi + 4 -> shì。声調記号を付ける母音の選び方は中国語の規則どおり。"""
+    s = syl.replace("v", "ü")
+    if not 1 <= tone <= 4:
+        return s
+    if "a" in s:
+        tgt, idx = "a", s.index("a")
+    elif "o" in s:
+        tgt, idx = "o", s.index("o")
+    elif "e" in s:
+        tgt, idx = "e", s.index("e")
+    elif "iu" in s:
+        tgt, idx = "u", s.index("iu") + 1
+    elif "ui" in s:
+        tgt, idx = "i", s.index("ui") + 1
+    else:
+        tgt = idx = None
+        for i in range(len(s) - 1, -1, -1):
+            if s[i] in "iuü":
+                tgt, idx = s[i], i
+                break
+        if tgt is None:
+            return s
+    return s[:idx] + _TONE[tgt][tone - 1] + s[idx + 1:]
+
+
+_PY_NUM = re.compile(r"([a-zA-ZüÜ]+)\((\d)\)")
+
+
+def py_mark(pinyin):
+    """保存形式 "biao(1) ding(4)" を表示用の "biāo dìng" にする。"""
+    if not pinyin or "(" not in pinyin:
+        return pinyin or ""
+    return _PY_NUM.sub(
+        lambda m: _mark_syllable(m.group(1).lower(), int(m.group(2))), pinyin)
+
+
+def _gloss():
+    return _load(GLOSS_FILE)
+
+
+def _gloss_cat(e):
+    return e.get("cat") or "一般"
+
+
+def glossary_list(cat="", q="", general=True, limit=300):
+    """分類別の件数と、該当する用語を頻度順に返す。"""
+    items = _gloss()
+    counts = {}
+    for e in items:
+        c = _gloss_cat(e)
+        counts[c] = counts.get(c, 0) + 1
+    rows = items
+    if cat:
+        rows = [e for e in rows if _gloss_cat(e) == cat]
+    elif not general:
+        rows = [e for e in rows if _gloss_cat(e) != "一般"]
+    if q:
+        ql = q.strip().lower()
+        rows = [e for e in rows
+                if ql in e["zh"].lower()
+                or ql in (e.get("ja") or "").lower()
+                or ql in py_mark(e.get("pinyin") or "").lower()]
+    matched = len(rows)
+    rows = sorted(rows, key=lambda e: (-(e.get("freq") or 0), e["zh"]))
+    if limit and limit > 0:
+        rows = rows[:limit]
+    return {
+        "cats": [{"name": c, "n": counts.get(c, 0)} for c in GLOSS_CATS],
+        "total": len(items),
+        "matched": matched,
+        "items": [{"zh": e["zh"], "ja": e.get("ja", ""),
+                   "py": py_mark(e.get("pinyin") or ""),
+                   "freq": e.get("freq") or 0, "cat": _gloss_cat(e),
+                   "origin": e.get("origin") or [],
+                   "src": (e.get("src") or [])[:3]} for e in rows],
+    }, None
+
+
+def glossary_update(zh, cat=None, ja=None, pinyin=None):
+    """1語の分類・日本語訳・拼音を書き換える。"""
+    if not zh:
+        return None, "zh is required"
+    if cat is not None and cat not in GLOSS_CATS:
+        return None, f"unknown category: {cat}"
+    with LOCK:
+        items = _gloss()
+        for e in items:
+            if e["zh"] != zh:
+                continue
+            if cat is not None:
+                e["cat"] = cat
+            if ja is not None:
+                e["ja"] = ja
+            if pinyin is not None:
+                e["pinyin"] = pinyin
+            _save(GLOSS_FILE, items)
+            return {"zh": zh, "cat": _gloss_cat(e), "ja": e.get("ja", ""),
+                    "py": py_mark(e.get("pinyin") or "")}, None
+    return None, "term not found"
+
+
+def _gloss_db():
+    return (CFG.get("notion") or {}).get("glossary_database_id", "")
+
+
+def glossary_pull():
+    """Notion の Chinese Dictionary を取り込み、ローカルへ合流させる。"""
+    if not (NOTION and NOTION.configured()):
+        return None, "notion not configured"
+    db = _gloss_db()
+    if not db:
+        return None, "config.json の notion.glossary_database_id が未設定です"
+    pages, err = NOTION.db_query(db)
+    if err:
+        return None, f"notion: {err}"
+    with LOCK:
+        items = _gloss()
+        by = {e["zh"]: e for e in items}
+        added = updated = 0
+        for p in pages:
+            zh = NOTION.prop_text(p, "Word").strip()
+            if not zh:
+                continue
+            ja = NOTION.prop_text(p, "Meaning_ja")
+            py = NOTION.prop_text(p, "Pinyin")
+            cat = NOTION.prop_text(p, "Category")
+            src = NOTION.prop_text(p, "Source Title")
+            e = by.get(zh)
+            if e is None:
+                e = {"zh": zh, "ja": ja, "pinyin": py, "freq": 1,
+                     "origin": ["notion"], "src": [src] if src else [],
+                     "cat": cat if cat in GLOSS_CATS else "一般"}
+                items.append(e)
+                by[zh] = e
+                added += 1
+            else:
+                changed = False
+                if ja and not e.get("ja"):
+                    e["ja"] = ja
+                    changed = True
+                if py and not e.get("pinyin"):
+                    e["pinyin"] = py
+                    changed = True
+                if src and src not in (e.get("src") or []):
+                    e.setdefault("src", []).append(src)
+                    changed = True
+                if "notion" not in (e.get("origin") or []):
+                    e.setdefault("origin", []).append("notion")
+                    changed = True
+                if changed:
+                    updated += 1
+            e["nid"] = p.get("id", "")
+        _save(GLOSS_FILE, items)
+    return {"notion_rows": len(pages), "added": added,
+            "updated": updated, "total": len(items)}, None
+
+
+# Notionへの書き戻しは語数が多く数分かかるため、裏で走らせて進捗を見せる。
+GLOSS_PUSH = {"running": False, "done": 0, "total": 0, "created": 0,
+              "updated": 0, "skipped": 0, "errors": [], "error": "",
+              "started_at": "", "finished_at": ""}
+
+
+def _gloss_push_run(create_missing, limit):
+    st = GLOSS_PUSH
+    try:
+        db = _gloss_db()
+        err = NOTION.db_ensure_select(db, "Category", GLOSS_CATS)
+        if err:
+            st["error"] = f"Categoryプロパティ作成: {err}"
+            return
+        pages, err = NOTION.db_query(db)
+        if err:
+            st["error"] = f"notion: {err}"
+            return
+        by_zh = {}
+        for p in pages:
+            z = NOTION.prop_text(p, "Word").strip()
+            if z:
+                by_zh[z] = p
+        items = _gloss()
+        if limit and limit > 0:
+            items = items[:limit]
+        st["total"] = len(items)
+        for e in items:
+            st["done"] += 1
+            zh, cat = e["zh"], _gloss_cat(e)
+            p = by_zh.get(zh)
+            if p is None:
+                if not create_missing:
+                    st["skipped"] += 1
+                    continue
+                props = {
+                    "Word": {"title": [{"text": {"content": zh[:1900]}}]},
+                    "Meaning_ja": {"rich_text": [{"text": {"content": (e.get("ja") or "")[:1900]}}]},
+                    "Pinyin": {"rich_text": [{"text": {"content": py_mark(e.get("pinyin") or "")[:1900]}}]},
+                    "Frequency": {"number": e.get("freq") or 0},
+                    "Category": {"select": {"name": cat}},
+                }
+                nid, err = NOTION.db_create_row(db, props)
+                if err:
+                    if len(st["errors"]) < 20:
+                        st["errors"].append(f"{zh}: {err}")
+                else:
+                    st["created"] += 1
+                continue
+            if NOTION.prop_text(p, "Category") == cat:
+                st["skipped"] += 1
+                continue
+            err = NOTION.page_set_select(p["id"], "Category", cat)
+            if err:
+                if len(st["errors"]) < 20:
+                    st["errors"].append(f"{zh}: {err}")
+            else:
+                st["updated"] += 1
+    except Exception as ex:  # noqa: BLE001
+        st["error"] = str(ex)
+    finally:
+        st["running"] = False
+        st["finished_at"] = now()
+
+
+def glossary_push_start(create_missing=True, limit=0):
+    if not (NOTION and NOTION.configured()):
+        return None, "notion not configured"
+    if not _gloss_db():
+        return None, "config.json の notion.glossary_database_id が未設定です"
+    if GLOSS_PUSH["running"]:
+        return dict(GLOSS_PUSH), None
+    GLOSS_PUSH.update({"running": True, "done": 0, "total": 0, "created": 0,
+                       "updated": 0, "skipped": 0, "errors": [], "error": "",
+                       "started_at": now(), "finished_at": ""})
+    threading.Thread(target=_gloss_push_run,
+                     args=(bool(create_missing), int(limit or 0)),
+                     daemon=True).start()
+    return dict(GLOSS_PUSH), None
+
+
+def glossary_push_status():
+    return dict(GLOSS_PUSH), None
+
+
+def glossary_autosync_start():
+    """config.json の notion.glossary_autopush_hour に時刻(0-23)を書くと、
+    毎日その時間に Notion から取り込み→分類を書き戻しする。"""
+    hour = (CFG.get("notion") or {}).get("glossary_autopush_hour")
+    if hour is None or hour == "":
+        return
+    try:
+        hour = int(hour)
+    except (TypeError, ValueError):
+        return
+
+    def _run():
+        import time
+        last = ""
+        while True:
+            time.sleep(300)
+            n = datetime.now()
+            today = n.strftime("%Y-%m-%d")
+            if n.hour != hour or last == today or GLOSS_PUSH["running"]:
+                continue
+            last = today
+            d, err = glossary_pull()
+            print(f"[glossary] auto pull: {err or d}")
+            _, err = glossary_push_start(True, 0)
+            if err:
+                print(f"[glossary] auto push: {err}")
+    threading.Thread(target=_run, daemon=True).start()
+    print(f"用語集の自動同期: 毎日 {hour}時台に Notion と往復します")
 
 
 def articles_refresh(limit=4):
@@ -1226,9 +1645,29 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 data, err = list_assessments(lg)
             self._ok(data) if not err else self._fail(err)
+        elif self.path.startswith("/api/glossary/push"):
+            data, err = glossary_push_status()
+            self._ok(data) if not err else self._fail(err)
+        elif self.path.startswith("/api/glossary"):
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query)
+            data, err = glossary_list(
+                cat=(q.get("cat") or [""])[0],
+                q=(q.get("q") or [""])[0],
+                general=(q.get("general") or ["1"])[0] != "0",
+                limit=int((q.get("limit") or ["300"])[0] or 0))
+            self._ok(data) if not err else self._fail(err)
         elif self.path == "/api/articles":
             data, err = articles_list()
             self._ok(data) if not err else self._fail(err)
+        elif self.path == "/api/dialogs":
+            data, err = dialogs_list()
+            self._ok(data) if not err else self._fail(err)
+        elif self.path.startswith("/api/dialog?"):
+            from urllib.parse import urlparse, parse_qs
+            did = (parse_qs(urlparse(self.path).query).get("id") or [""])[0]
+            data, err = dialogs_get(did)
+            self._ok(data) if not err else self._fail(err, 404)
         elif self.path.startswith("/api/article?"):
             from urllib.parse import urlparse, parse_qs
             aid = (parse_qs(urlparse(self.path).query).get("id") or [""])[0]
@@ -1311,10 +1750,33 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/articles/breaks":
             data, err = article_set_breaks(body.get("article_id"), body.get("idx"),
                                            body.get("breaks", []))
+        elif self.path == "/api/dialogs/fail":
+            data, err = dialog_fail(body.get("dialog_id"), body.get("idx"),
+                                    body.get("ci"), body.get("char", ""),
+                                    body.get("syllable", ""), body.get("label", "F"),
+                                    body.get("scope", FAIL_SCOPE_SENT))
+        elif self.path == "/api/dialogs/unfail":
+            data, err = dialog_unfail(body.get("dialog_id"), body.get("idx"),
+                                      body.get("ci"), body.get("scope", FAIL_SCOPE_SENT))
+        elif self.path == "/api/dialogs/breaks":
+            data, err = dialog_set_breaks(body.get("dialog_id"), body.get("idx"),
+                                          body.get("breaks", []))
+        elif self.path == "/api/dialogs/text":
+            data, err = dialog_set_text(body.get("dialog_id"), body.get("idx"),
+                                        body.get("zh"), body.get("pairs"),
+                                        body.get("py"))
         elif self.path == "/api/articles/session":
             data, err = article_session(body.get("article_id"))
         elif self.path == "/api/assessments/clear":
             data, err = clear_assessments(body.get("lang"))
+        elif self.path == "/api/glossary/cat":
+            data, err = glossary_update(body.get("zh"), cat=body.get("cat"),
+                                        ja=body.get("ja"), pinyin=body.get("pinyin"))
+        elif self.path == "/api/glossary/pull":
+            data, err = glossary_pull()
+        elif self.path == "/api/glossary/push":
+            data, err = glossary_push_start(body.get("create_missing", True),
+                                            body.get("limit", 0))
         elif self.path == "/api/articles/push":
             data, err = article_push_fails(body.get("article_id"))
         else:
@@ -1335,6 +1797,7 @@ def main():
         print(f"Drive: {'ready' if DRIVE.configured() else 'NOT configured - see README (GAS deploy)'}")
         drive_pull_initial()
     migrate_ids()  # 既存データへの固有ID付与（無いものだけ）
+    glossary_autosync_start()  # 用語集のNotion定期同期（設定があれば）
     warm_up()  # preload the model at startup
 
     srv = ThreadingHTTPServer((host, port), Handler)

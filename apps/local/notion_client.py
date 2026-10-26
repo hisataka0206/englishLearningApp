@@ -27,22 +27,37 @@ class NotionClient:
     def _req(self, method, path, payload=None):
         url = f"{API}/{path}"
         data = json.dumps(payload).encode() if payload is not None else None
+        import time
+        for attempt in range(6):
+            res, err, retry = self._req_once(method, url, data)
+            if not retry:
+                return res, err
+            time.sleep(retry * (attempt + 1))
+        return res, err
+
+    def _req_once(self, method, url, data):
         req = urllib.request.Request(url, data=data, method=method)
         req.add_header("Authorization", f"Bearer {self.token}")
         req.add_header("Notion-Version", self.version)
         req.add_header("Content-Type", "application/json")
         try:
             with urllib.request.urlopen(req, timeout=30) as r:
-                return json.loads(r.read().decode()), None
+                return json.loads(r.read().decode()), None, 0
         except urllib.error.HTTPError as e:
+            if e.code == 429:  # レート制限は待って再試行
+                try:
+                    wait = float(e.headers.get("Retry-After", "1"))
+                except Exception:
+                    wait = 1.0
+                return None, "rate_limited", max(wait, 1.0)
             try:
                 body = json.loads(e.read().decode())
                 msg = f"{body.get('code')}: {body.get('message', '')[:120]}"
             except Exception:
                 msg = f"HTTP {e.code}"
-            return None, msg
+            return None, msg, 0
         except Exception as e:
-            return None, str(e)
+            return None, str(e), 0
 
     def _children(self, block_id):
         """All child blocks (handles pagination)."""
@@ -129,6 +144,95 @@ class NotionClient:
                         source_url = m.group(0)
         return source_url, jp_title
 
+    # ------------------------------------------------------------ sentence parser
+    _KANA = re.compile(r"[\u3040-\u30ff]")
+    _HANZI = re.compile(r"[\u4e00-\u9fff]")
+    _MARK_ONLY = re.compile(r"^(?:第\s*\d+\s*句|\d{1,2}\s*[.．、])$")
+    _MARK_PREFIX = re.compile(r"^(?:第\s*\d+\s*句|\d{1,2}\s*[.．、])\s*(.+)$")
+    _ZH_END = "。！？…；”’」）)"
+    _TONE = re.compile(r"[āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]")
+
+    def _is_zh(self, s):
+        return (bool(self._HANZI.search(s)) and not self._KANA.search(s)
+                and s[-1] in self._ZH_END)
+
+    def _is_pinyin(self, s):
+        if self._HANZI.search(s) or self._KANA.search(s) or len(s) < 6:
+            return False
+        if self._TONE.search(s):
+            return True
+        letters = sum(c.isascii() and c.isalpha() for c in s)
+        return letters >= 0.6 * len(s) and " " in s
+
+    def _parse_sentences(self, blocks):
+        """記事ごとに違う書式（第N句／N.／ラベルなし、中文・拼音のラベル有無）を
+        内容で判別して文に分ける。日本語訳はトグルの子ブロックから取る。"""
+        start = 0
+        for i, b in enumerate(blocks):
+            if b["type"].startswith("heading") and "中文要" in self._text(b):
+                start = i + 1
+                break
+        sentences, cur = [], None
+
+        def flush():
+            nonlocal cur
+            if cur and cur.get("zh"):
+                sentences.append(cur)
+            cur = None
+
+        def new():
+            nonlocal cur
+            flush()
+            cur = {"idx": len(sentences) + 1, "zh": "", "pinyin": "", "ja": ""}
+
+        def feed(txt):
+            nonlocal cur
+            if txt.startswith("拼音："):
+                if cur is None:
+                    new()
+                cur["pinyin"] = txt[len("拼音："):].strip()
+            elif txt.startswith("日本語："):
+                if cur is not None:
+                    cur["ja"] = txt[len("日本語："):].strip()
+            elif txt.startswith("中文："):
+                new()
+                cur["zh"] = txt[len("中文："):].strip()
+            elif self._is_zh(txt):
+                if cur is None or cur["zh"]:
+                    new()
+                cur["zh"] = txt
+            elif cur is not None and not cur["pinyin"] and self._is_pinyin(txt):
+                cur["pinyin"] = txt
+
+        for b in blocks[start:]:
+            t = b["type"]
+            txt = self._text(b)
+            if t.startswith("heading") and ("語彙" in txt or "词汇" in txt):
+                break
+            if t == "table":
+                continue
+            if t == "toggle":
+                kids, _ = self._children(b["id"])
+                ja = " ".join(self._text(k) for k in (kids or []) if self._text(k))
+                if cur is not None and not cur["ja"]:
+                    cur["ja"] = ja.strip()
+                continue
+            if t not in ("paragraph", "heading_2", "heading_3"):
+                continue
+            if not txt:
+                continue
+            if self._MARK_ONLY.match(txt):
+                new()
+                continue
+            m = self._MARK_PREFIX.match(txt)
+            if m and (txt.startswith("第") or self._HANZI.search(m.group(1))):
+                new()
+                feed(m.group(1).strip())
+                continue
+            feed(txt)
+        flush()
+        return sentences
+
     def parse_article(self, page_id):
         """Parse one article page into structured data."""
         page, err = self._req("GET", f"pages/{page_id}")
@@ -143,53 +247,13 @@ class NotionClient:
         if err:
             return None, err
 
-        import re
-        sent_re = re.compile(r"^第\s*\d+\s*句")
-        num_re = re.compile(r"^\d{1,2}[.．、]\s*(.+)")  # 「1. 中文…」番号付き
-
-        sentences = []
-        cur = None
+        sentences = self._parse_sentences(blocks)
         vocab = []
         for b in blocks:
-            t = b["type"]
-            txt = self._text(b)
-            # 「第N句」は記事により paragraph / heading_2 / heading_3 のいずれか
-            if sent_re.match(txt):
-                if cur and cur.get("zh"):
-                    sentences.append(cur)
-                cur = {"idx": len(sentences) + 1, "zh": "", "pinyin": "", "ja": ""}
-            elif txt.startswith("中文："):
-                # 「第N句」ラベルが無いフォーマットでは「中文：」自体が文の区切り
-                if cur and cur.get("zh"):
-                    sentences.append(cur)
-                    cur = None
-                if cur is None:
-                    cur = {"idx": len(sentences) + 1, "zh": "", "pinyin": "", "ja": ""}
-                cur["zh"] = txt[len("中文："):].strip()
-            elif txt.startswith("拼音："):
-                if cur is not None:
-                    cur["pinyin"] = txt[len("拼音："):].strip()
-            elif num_re.match(txt) and any("一" <= c <= "鿿" for c in txt):
-                # 「1. 中文…」番号付きフォーマット（中文：接頭辞なし）
-                if cur and cur.get("zh"):
-                    sentences.append(cur)
-                cur = {"idx": len(sentences) + 1, "zh": num_re.match(txt).group(1).strip(),
-                       "pinyin": "", "ja": ""}
-            elif txt.startswith("日本語："):
-                if cur is not None:
-                    cur["ja"] = txt[len("日本語："):].strip()
-            elif t == "toggle":
-                # 日本語訳はトグルの子ブロックに入っている（新フォーマット）
-                kids, _ = self._children(b["id"])
-                ja = " ".join(self._text(k) for k in (kids or []) if self._text(k))
-                if cur is not None and not cur.get("ja"):
-                    cur["ja"] = ja.strip()
-            elif t == "table":
+            if b["type"] == "table":
                 v = self._parse_table(b["id"])
                 if v:  # 出典情報テーブル等は空になるので、語彙が取れた表だけ採用
                     vocab = v
-        if cur and cur.get("zh"):
-            sentences.append(cur)
 
         source_url, jp_title = self.extract_meta(blocks)
         date = title[:10] if re.match(r"\d{4}-\d\d-\d\d", title) else ""
@@ -263,3 +327,79 @@ class NotionClient:
             if len(vals) >= 3 and vals[0]:
                 out.append({"zh": vals[0], "pinyin": vals[1], "ja": vals[2]})
         return out
+
+    # ------------------------------------------------------------ database
+    def db_get(self, db_id):
+        """データベースのスキーマ（プロパティ定義）を返す。"""
+        res, err = self._req("GET", f"databases/{db_id}")
+        if err:
+            return None, err
+        return res.get("properties", {}), None
+
+    def db_query(self, db_id, page_size=100):
+        """データベースの全行を返す（ページネーション処理込み）。"""
+        out, cursor = [], None
+        while True:
+            payload = {"page_size": page_size}
+            if cursor:
+                payload["start_cursor"] = cursor
+            res, err = self._req("POST", f"databases/{db_id}/query", payload)
+            if err:
+                return None, err
+            out.extend(res.get("results", []))
+            if not res.get("has_more"):
+                break
+            cursor = res.get("next_cursor")
+        return out, None
+
+    @staticmethod
+    def prop_text(page, name):
+        """title / rich_text / select / number プロパティを素のテキストで取り出す。"""
+        p = (page.get("properties") or {}).get(name)
+        if not p:
+            return ""
+        t = p.get("type")
+        if t in ("title", "rich_text"):
+            return "".join(x.get("plain_text", "") for x in p.get(t, [])).strip()
+        if t == "select":
+            return ((p.get("select") or {}).get("name") or "").strip()
+        if t == "number":
+            v = p.get("number")
+            return "" if v is None else str(v)
+        if t == "url":
+            return p.get("url") or ""
+        return ""
+
+    def db_ensure_select(self, db_id, name, options):
+        """select プロパティが無ければ作り、足りない選択肢を追加する。"""
+        props, err = self.db_get(db_id)
+        if err:
+            return err
+        cur = props.get(name)
+        if cur and cur.get("type") != "select":
+            return f"property {name} exists but is {cur.get('type')}, not select"
+        have = []
+        if cur:
+            have = [o.get("name") for o in (cur.get("select") or {}).get("options", [])]
+        merged = list(have) + [o for o in options if o not in have]
+        if cur and len(merged) == len(have):
+            return None  # 変更不要
+        _, err = self._req("PATCH", f"databases/{db_id}",
+                           {"properties": {name: {"select": {
+                               "options": [{"name": o} for o in merged]}}}})
+        return err
+
+    def page_set_select(self, page_id, name, value):
+        """ページの select プロパティを更新する（value が空なら未設定にする）。"""
+        val = {"select": {"name": value}} if value else {"select": None}
+        _, err = self._req("PATCH", f"pages/{page_id}",
+                           {"properties": {name: val}})
+        return err
+
+    def db_create_row(self, db_id, props):
+        """{プロパティ名: Notion形式の値} で1行追加する。"""
+        res, err = self._req("POST", "pages",
+                             {"parent": {"database_id": db_id}, "properties": props})
+        if err:
+            return None, err
+        return res.get("id", ""), None

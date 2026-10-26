@@ -64,6 +64,19 @@
   .cgrid.editbreaks .cgap.brk { background:var(--accent); }
   .cgrid.editbreaks .cgap.brk::after { content:"✂"; color:#fff; font-size:11px; }
   .cgrid.editbreaks .cchar { opacity:.75; }
+  .dlgitem { padding:11px 4px; border-bottom:1px solid #f0f1f5; cursor:pointer; }
+  .dlgitem:last-child { border-bottom:0; }
+  .turn { display:flex; margin:8px 0; }
+  .turn.me { justify-content:flex-end; }
+  .turn .bub { max-width:92%; background:#fff; border-radius:14px; padding:9px 12px;
+    box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  .turn.me .bub { background:#e8edff; }
+  .turn .cgrid.masked { filter:blur(6px); }
+  #failPopPy { display:flex; flex-wrap:wrap; gap:6px; align-items:center;
+    margin-top:8px; padding-top:8px; border-top:1px solid #eef1f8; }
+  #failPopPy .pyin { flex:1; min-width:96px; font-size:14px; padding:6px 8px;
+    border:1px solid #d8dce6; border-radius:8px; }
+  #failPopPy .pyprev { font-size:14px; color:var(--ok); font-weight:700; }
   .fbtn { display:inline-block; margin:2px; padding:8px 10px; border:0; border-radius:8px; background:#eef1f8; font-size:14px; cursor:pointer; }
   .fbtn.rm { background:#fdecec; color:var(--ng); }
   #btnRec.recording { background:var(--ng); color:#fff; }
@@ -97,6 +110,8 @@
     <div id="status">…</div>
     <button class="navb" id="nav_main" onclick="showView('main')">✍️ 自分の文</button>
     <button class="navb" id="nav_articles" onclick="showView('articles')">📰 記事</button>
+    <button class="navb" id="nav_dialog" onclick="showView('dialog')">💬 会話</button>
+    <button class="navb" id="nav_gloss" onclick="showView('gloss')">📚 用語</button>
     <button class="navb" id="nav_record" onclick="showView('record')">📊 記録</button>
     <button class="navb" onclick="location.reload()">⟳</button>
   </div>
@@ -191,10 +206,47 @@
       </div>
     </div>
   </div>
-  <!-- ミス種類ポップアップ（記事用） -->
-  <div id="failPop" style="display:none;position:fixed;z-index:30;background:#fff;border:1px solid var(--accent);border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.2);padding:8px">
-    <div id="failPopChar" style="font-weight:700;text-align:center;margin-bottom:4px"></div>
-    <div id="failPopBtns"></div>
+</div>
+
+<div id="viewDialog" style="display:none">
+  <div class="card" id="dialogListCard">
+    <h2>会話練習</h2>
+    <div class="msg" id="msgDlg"></div>
+    <div id="dialogList">読み込み中…</div>
+  </div>
+  <div class="card" id="dialogDetail" style="display:none">
+    <h2><button class="small ghost" onclick="closeDialog()">← 一覧</button>
+      <span id="dlgTitle"></span></h2>
+    <div class="row" style="margin:-2px 0 8px">
+      <button class="small tab active" id="btnDlgHide" onclick="toggleDlgHide()">🙈 自分</button>
+      <button class="small tab" id="btnDlgBreak" onclick="toggleDlgBreakEdit()">✂️ 区切り編集</button>
+      <span class="sub" id="dlgBreakHint"></span>
+    </div>
+    <div id="dlgTurns"></div>
+    <h2 style="margin-top:14px">語彙</h2>
+    <div id="dlgVocab"></div>
+  </div>
+</div>
+
+<div id="viewGloss" style="display:none">
+  <div class="card">
+    <h2>専門用語集
+      <span class="sub" id="glCount" style="font-weight:400"></span>
+      <span style="float:right">
+        <button class="small ghost" onclick="glPull()" title="Notionから取り込む">⬇️</button>
+        <button class="small ghost" onclick="glPush()" title="Notionへ分類を書き戻す">⬆️</button>
+      </span>
+    </h2>
+    <div class="msg" id="msgGloss"></div>
+    <div class="row" style="margin:0 0 8px">
+      <input id="glQ" placeholder="中文・拼音・日本語で検索" oninput="glSearch(this.value)"
+             style="flex:1;min-width:140px">
+      <label class="sub" style="display:flex;align-items:center;gap:4px;white-space:nowrap">
+        <input type="checkbox" id="glGen" onchange="glToggleGeneral(this.checked)"> 一般
+      </label>
+    </div>
+    <div id="glCats" class="row" style="margin:0 0 10px;gap:6px"></div>
+    <div id="glList">読み込み中…</div>
   </div>
 </div>
 
@@ -209,6 +261,12 @@
     <button class="small ghost" style="margin-left:auto" onclick="clearRecords()" title="この言語の記録を全部消す">🗑</button>
   </div>
   <div class="card"><div id="recordBody">読み込み中…</div></div>
+</div>
+<!-- ミス種類ポップアップ（記事・会話で共用）。拼音の手直し欄つき -->
+<div id="failPop" style="display:none;position:fixed;z-index:30;background:#fff;border:1px solid var(--accent);border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.2);padding:8px">
+  <div id="failPopChar" style="font-weight:700;text-align:center;margin-bottom:4px"></div>
+  <div id="failPopBtns"></div>
+  <div id="failPopPy" style="display:none"></div>
 </div>
 </main>
 
@@ -903,12 +961,125 @@ function showView(v) {
   view = v;
   document.getElementById("viewMain").style.display = v === "main" ? "" : "none";
   document.getElementById("viewArticles").style.display = v === "articles" ? "" : "none";
+  document.getElementById("viewDialog").style.display = v === "dialog" ? "" : "none";
+  document.getElementById("viewGloss").style.display = v === "gloss" ? "" : "none";
   document.getElementById("viewRecord").style.display = v === "record" ? "" : "none";
-  ["main","articles","record"].forEach(x =>
+  ["main","articles","dialog","gloss","record"].forEach(x =>
     document.getElementById("nav_" + x).classList.toggle("active", x === v));
   if (v === "articles") loadArticles();
+  if (v === "dialog") loadDialogs();
+  if (v === "gloss") loadGloss();
   if (v === "record") { recLang = lang; loadRecord(); }
   window.scrollTo(0, 0);
+}
+
+// ---- 専門用語集（分類別／Notionと同期） ----
+const GL_CATS = ["ロボット本体・種別","モーター・駆動","減速・伝動・機構","センサー・知覚",
+  "AI・制御","材料・構造・熱","製造・量産","規格・安全","サプライチェーン","資本・市場",
+  "固有名詞","一般"];
+let glCat = "", glQ = "", glTimer = null;
+let glGeneral = localStorage.getItem("glGeneral") === "1";
+
+function speakZh(text) {
+  try { playerStop(); } catch (e) {}
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = "zh-CN";
+  u.rate = parseFloat(document.getElementById("rate").value);
+  const vs = speechSynthesis.getVoices().filter(v => v.lang.startsWith("zh"));
+  if (vs.length) u.voice = vs.find(v => /Tingting|Ting-Ting|Chinese|中文|普通话/i.test(v.name)) || vs[0];
+  speechSynthesis.speak(u);
+}
+
+function glToggleGeneral(on) {
+  glGeneral = on;
+  localStorage.setItem("glGeneral", on ? "1" : "0");
+  if (!on && glCat === "一般") glCat = "";
+  loadGloss();
+}
+
+function glSearch(v) {
+  glQ = v;
+  if (v) glCat = "";  // 検索中は分類の絞り込みを解除（取りこぼし防止）
+  clearTimeout(glTimer);
+  glTimer = setTimeout(loadGloss, 250);
+}
+
+function glPick(cat) {
+  glCat = (glCat === cat) ? "" : cat;
+  loadGloss();
+}
+
+async function loadGloss() {
+  document.getElementById("glGen").checked = glGeneral;
+  const qs = new URLSearchParams({ cat: glCat, q: glQ,
+    general: glGeneral ? "1" : "0", limit: "300" });
+  try {
+    const d = await api("/api/glossary?" + qs.toString());
+    renderGloss(d);
+  } catch (e) {
+    document.getElementById("glList").textContent = e.message;
+  }
+}
+
+function renderGloss(d) {
+  const cats = d.cats.filter(c => glGeneral || c.name !== "一般");
+  document.getElementById("glCats").innerHTML = cats.map(c =>
+    `<button class="tab small ${glCat === c.name ? "active" : ""}"
+      onclick="glPick('${c.name}')">${esc(c.name)} <span class="sub">${c.n}</span></button>`).join("");
+  const opts = GL_CATS.map(c => `<option value="${c}">${c}</option>`).join("");
+  document.getElementById("glCount").textContent =
+    `${d.matched}件 / 全${d.total}件` + (d.items.length < d.matched ? `（上位${d.items.length}件）` : "");
+  document.getElementById("glList").innerHTML = d.items.length ? d.items.map(it => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f0f0f0">
+      <div style="flex:1;min-width:0">
+        <div onclick="speakZh('${it.zh.replace(/'/g, "")}')" style="cursor:pointer">
+          <b style="font-size:17px">${esc(it.zh)}</b>
+          <span class="sub" style="margin-left:6px">${esc(it.py)}</span>
+        </div>
+        <div class="sub" style="color:var(--muted)">${esc(it.ja)}</div>
+      </div>
+      <span class="badge" title="出現回数">${it.freq}</span>
+      <select onchange="glSetCat('${it.zh.replace(/'/g, "")}', this.value)"
+        style="max-width:40vw">${opts.replace(`value="${it.cat}"`, `value="${it.cat}" selected`)}</select>
+    </div>`).join("") : "<div class=\"sub\">該当なし</div>";
+}
+
+async function glSetCat(zh, cat) {
+  try {
+    await api("/api/glossary/cat", { zh, cat });
+    loadGloss();
+  } catch (e) { alert(e.message); }
+}
+
+function glMsg(t) { document.getElementById("msgGloss").textContent = t; }
+
+async function glPull() {
+  glMsg("Notionから取り込み中…");
+  try {
+    const d = await api("/api/glossary/pull", {});
+    glMsg(`Notion ${d.notion_rows}件 → 追加${d.added} / 更新${d.updated}（合計${d.total}語）`);
+    loadGloss();
+  } catch (e) { glMsg("取り込み失敗: " + e.message); }
+}
+
+async function glPush() {
+  if (!confirm("ローカルの分類をNotionへ書き戻します（Notionに無い語は新規作成）。実行しますか？")) return;
+  try {
+    await api("/api/glossary/push", { create_missing: true });
+    glMsg("Notionへ書き戻し中…");
+    glPoll();
+  } catch (e) { glMsg("書き戻し失敗: " + e.message); }
+}
+
+async function glPoll() {
+  try {
+    const s = await api("/api/glossary/push");
+    const n = `${s.done}/${s.total || "?"}（新規${s.created} 更新${s.updated} 据置${s.skipped}）`;
+    if (s.running) { glMsg("Notionへ書き戻し中… " + n); setTimeout(glPoll, 2000); return; }
+    glMsg((s.error ? "エラー: " + s.error + " / " : "") + "書き戻し完了 " + n +
+      (s.errors && s.errors.length ? ` 失敗${s.errors.length}件: ${s.errors[0]}` : ""));
+  } catch (e) { glMsg("状況取得に失敗: " + e.message); }
 }
 
 // ---- 記録（発音チェックの履歴と苦手） ----
@@ -1422,6 +1593,11 @@ function toggleBreak(idx, pos) {
   s.breaks = s.breaks || [];
   const i = s.breaks.indexOf(pos);
   if (i >= 0) s.breaks.splice(i, 1); else s.breaks.push(pos);
+  if (isDialog()) {
+    renderDlgTurns();
+    api("/api/dialogs/breaks", { dialog_id: curArticle.id, idx, breaks: s.breaks }).catch(() => {});
+    return;
+  }
   renderArtSentences();
   api("/api/articles/breaks", { article_id: curArticle.id, idx, breaks: s.breaks }).catch(() => {});
 }
@@ -1466,6 +1642,19 @@ function openFailMenu(el) {
     `<button class="fbtn" title="${esc(l.name)}" onclick="setCharFail(${args},'${ch.replace(/'/g,"\\'")}','${py.replace(/'/g,"\\'")}','${l.code}')"><b>${l.code}</b> ${esc(l.name)}</button>`).join("");
   if (already) btns += `<button class="fbtn rm" onclick="removeCharFail(${args})">✕ 取消</button>`;
   document.getElementById("failPopBtns").innerHTML = btns;
+  // 会話練習では拼音も直せる（多音字を自動生成が外したとき用）
+  const pyBox = document.getElementById("failPopPy");
+  if (isDialog() && scope === "s") {
+    pyBox.style.display = "";
+    pyBox.innerHTML = `<input class="pyin" value="${esc(py)}" spellcheck="false"
+        autocapitalize="off" autocorrect="off" inputmode="latin">
+      <span class="pyprev"></span>
+      <button class="fbtn" onclick="saveCharPinyin(${idx},${ci})">拼音を直す</button>`;
+    const inp = pyBox.querySelector(".pyin"), prev = pyBox.querySelector(".pyprev");
+    const pv = () => { const v = pyNormalize(inp.value); prev.textContent = (v && v !== inp.value.trim()) ? "→ " + v : ""; };
+    inp.oninput = pv; pv();
+    inp.onkeydown = (ev) => { if (ev.key === "Enter") { ev.preventDefault(); saveCharPinyin(idx, ci); } };
+  } else { pyBox.style.display = "none"; pyBox.innerHTML = ""; }
   // 位置：文字の近く
   const r = el.getBoundingClientRect();
   pop.style.display = "block";
@@ -1488,28 +1677,203 @@ function dropFail(scope, idx, ci) {
     f => !((f.scope || "s") === scope && f.idx === idx && f.ci === ci));
 }
 
+// ============================================================ 会話練習
+// 記事と同じ形のデータなので、文字マス・ミス記録・区切り・プレイヤーは
+// 記事の仕組みをそのまま使う。違うのは「誰の発言か」と「自分の番を伏せる」ところ。
+let dlgHideMe = true;
+const dlgOpened = new Set();   // 一度開いたターンは伏せ字に戻さない
+
+// 声調記号（ǎ など）はキーボードから打てないので wei2 → wéi で入力させる
+const PY_TONES = { a:"āáǎà", o:"ōóǒò", e:"ēéěè", i:"īíǐì", u:"ūúǔù", "ü":"ǖǘǚǜ" };
+function pyNum2Mark(tok) {
+  const m = /^([a-zA-ZüÜvV]+)([0-5])$/.exec(tok);
+  if (!m) return tok;
+  const w = m[1].toLowerCase().replace(/v/g, "ü");
+  const t = +m[2];
+  if (!t || t === 5) return w;
+  let i = w.indexOf("a");
+  if (i < 0) i = w.indexOf("o");
+  if (i < 0) i = w.indexOf("e");
+  if (i < 0) {
+    const iu = w.indexOf("iu"), ui = w.indexOf("ui");
+    if (iu >= 0) i = iu + 1; else if (ui >= 0) i = ui + 1; else i = w.search(/[iuü]/);
+  }
+  if (i < 0) return w;
+  const set = PY_TONES[w[i]];
+  return set ? w.slice(0, i) + set[t - 1] + w.slice(i + 1) : w;
+}
+const pyNormalize = (v) => String(v == null ? "" : v).trim().split(/\s+/).map(pyNum2Mark).join(" ").trim();
+
+async function loadDialogs() {
+  const box = document.getElementById("dialogList");
+  box.innerHTML = "読み込み中…";
+  try {
+    const list = await api("/api/dialogs");
+    if (!list.length) { box.textContent = "会話データがありません（data/dialogs_zh.json）"; return; }
+    box.innerHTML = list.map(d =>
+      `<div class="dlgitem" onclick="openDialog('${esc(d.id)}')">
+         <div><b>${esc(d.jp_title || d.title)}</b></div>
+         <div class="sub">${esc(d.zh_title)}　${d.turns}往復・${d.total_chars}字・語彙${d.vocab}
+           ${d.fails ? `<span class="badge">ミス ${d.fails}</span>` : ""}</div>
+       </div>`).join("");
+  } catch (e) { box.textContent = e.message; }
+}
+
+async function openDialog(id) {
+  lang = "zh";                 // 会話は中国語：発音と拼音を中国語モードに
+  explicitBreaks = false;      // 自動区切り＋手で足す
+  breakEditMode = false;
+  document.getElementById("btnDlgBreak").classList.remove("active");
+  document.getElementById("dlgBreakHint").textContent = "";
+  dlgOpened.clear();
+  try {
+    const d = await api("/api/dialog?id=" + encodeURIComponent(id));
+    curArticle = d;
+    document.getElementById("dlgTitle").textContent = d.jp_title || d.title;
+    document.getElementById("dialogListCard").style.display = "none";
+    document.getElementById("dialogDetail").style.display = "";
+    renderDlgTurns();
+    renderDlgVocab();
+    window.scrollTo(0, 0);
+  } catch (e) { msg("msgDlg", e.message, false); }
+}
+
+function closeDialog() {
+  document.getElementById("dialogDetail").style.display = "none";
+  document.getElementById("dialogListCard").style.display = "";
+  playerClose();
+  curArticle = null;
+  loadDialogs();
+}
+
+function toggleDlgHide() {
+  dlgHideMe = !dlgHideMe;
+  document.getElementById("btnDlgHide").classList.toggle("active", dlgHideMe);
+  renderDlgTurns();
+}
+
+function toggleDlgBreakEdit() {
+  breakEditMode = !breakEditMode;
+  document.getElementById("btnDlgBreak").classList.toggle("active", breakEditMode);
+  document.getElementById("dlgBreakHint").textContent =
+    breakEditMode ? "文字の間（｜）をタップで区切り" : "";
+  if (breakEditMode) playerClose();
+  renderDlgTurns();
+}
+
+function revealTurn(idx) { dlgOpened.add(idx); renderDlgTurns(); }
+
+function renderDlgTurns() {
+  const box = document.getElementById("dlgTurns");
+  box.innerHTML = "";
+  const fmap = failMap("s");
+  curArticle.sentences.forEach(s => {
+    const mine = s.role === "me";
+    const hide = mine && dlgHideMe && !dlgOpened.has(s.idx) && !breakEditMode;
+    const row = document.createElement("div");
+    row.className = "turn " + (mine ? "me" : "other");
+    const pairs = s.pairs || (s.zh || "").split("").map(c => [c, ""]);
+    const breaks = new Set(s.breaks || []);
+    let grid = `<div class="cgrid${breakEditMode ? " editbreaks" : ""}${hide ? " masked" : ""}">`;
+    pairs.forEach((p, ci) => {
+      const [ch, py] = p;
+      const selectable = !!py && !breakEditMode && !hide;
+      if (ci > 0) grid += `<span class="cgap${breaks.has(ci - 1) ? " brk" : ""}" ${breakEditMode ? `onclick="toggleBreak(${s.idx},${ci - 1})"` : ""}></span>`;
+      grid += charCellHTML("s", s.idx, ci, ch, py, fmap[failKey("s", s.idx, ci)], selectable);
+    });
+    grid += "</div>";
+    row.innerHTML = `<div class="bub">${grid}` +
+      (s.ja ? `<div class="sub" style="margin-top:4px">${esc(s.ja)}</div>` : "") +
+      `<div class="row" style="margin-top:6px">
+         <button class="small ghost" onclick="playArtSentence(${s.idx})" title="節ごとに発音">▶</button>
+         <button class="small ghost" onclick="editTurn(${s.idx})" title="中国語を直す">✏️</button>
+         ${hide ? `<button class="small ghost" onclick="revealTurn(${s.idx})" title="見る">👁</button>` : ""}
+       </div></div>`;
+    box.appendChild(row);
+    row.querySelectorAll(".cchar").forEach(el => attachLongPress(el));
+  });
+}
+
+function renderDlgVocab() {
+  const box = document.getElementById("dlgVocab");
+  const vs = curArticle.vocab || [];
+  if (!vs.length) { box.innerHTML = "（なし）"; return; }
+  const fmap = failMap("v");
+  let hh = `<table class="htable"><tr><th>語</th><th>日本語</th></tr>`;
+  vs.forEach((v, vi) => {
+    const pairs = v.pairs || (v.zh || "").split("").map(c => [c, ""]);
+    let grid = `<div class="cgrid vocabgrid">`;
+    pairs.forEach((p, ci) => {
+      const [ch, py] = p;
+      grid += charCellHTML("v", vi, ci, ch, py, fmap[failKey("v", vi, ci)], !!py);
+    });
+    grid += "</div>";
+    hh += `<tr><td>${grid}</td><td>${esc(v.ja || "")}</td></tr>`;
+  });
+  box.innerHTML = hh + "</table>";
+  box.querySelectorAll(".cchar").forEach(el => attachLongPress(el));
+}
+
+async function editTurn(idx) {
+  const s = curArticle.sentences.find(x => x.idx === idx);
+  if (!s) return;
+  const v = prompt("中国語を直す（拼音は自動で振り直します）", s.zh);
+  if (v === null) return;
+  const zh = v.replace(/\s+/g, "").trim();
+  if (!zh || zh === s.zh) return;
+  try {
+    const d = await api("/api/dialogs/text", { dialog_id: curArticle.id, idx, zh });
+    s.zh = d.zh; s.pairs = d.pairs; s.breaks = [];
+    curArticle.fails = (curArticle.fails || []).filter(
+      f => !((f.scope || "s") === "s" && f.idx === idx));   // 文字位置がずれるので外す
+    dlgOpened.add(idx);
+    renderDlgTurns();
+  } catch (e) { alert(e.message); }
+}
+
+async function saveCharPinyin(idx, ci) {
+  const inp = document.querySelector("#failPopPy .pyin");
+  const v = pyNormalize(inp ? inp.value : "");
+  closeFailMenu();
+  if (!v) return;
+  const s = curArticle.sentences.find(x => x.idx === idx);
+  if (s && s.pairs && s.pairs[ci]) s.pairs[ci][1] = v;
+  renderDlgTurns();
+  try { await api("/api/dialogs/text", { dialog_id: curArticle.id, idx, py: { [ci]: v } }); }
+  catch (e) { alert(e.message); }
+}
+
 function renderArtScope(scope) {
+  if (curArticle && curArticle.kind === "dialog") {
+    if (scope === "v") renderDlgVocab(); else renderDlgTurns();
+    return;
+  }
   if (scope === "v") renderArtVocab(); else renderArtSentences();
 }
+const isDialog = () => !!(curArticle && curArticle.kind === "dialog");
 
 async function setCharFail(scope, idx, ci, ch, py, label) {
   closeFailMenu();
   try {
-    const d = await api("/api/articles/fail", { article_id: curArticle.id, scope, idx, ci, char: ch, syllable: py, label });
+    const d = isDialog()
+      ? await api("/api/dialogs/fail", { dialog_id: curArticle.id, scope, idx, ci, char: ch, syllable: py, label })
+      : await api("/api/articles/fail", { article_id: curArticle.id, scope, idx, ci, char: ch, syllable: py, label });
     dropFail(scope, idx, ci);
-    curArticle.fails.push({ scope, idx, ci, char: ch, syllable: py, label, pushed: false });
+    (curArticle.fails = curArticle.fails || []).push({ scope, idx, ci, char: ch, syllable: py, label, pushed: false });
     renderArtScope(scope);
-    updatePending(d.pending_fails);
+    if (!isDialog()) updatePending(d.pending_fails);
   } catch(e) { alert(e.message); }
 }
 
 async function removeCharFail(scope, idx, ci) {
   closeFailMenu();
   try {
-    const d = await api("/api/articles/unfail", { article_id: curArticle.id, scope, idx, ci });
+    const d = isDialog()
+      ? await api("/api/dialogs/unfail", { dialog_id: curArticle.id, scope, idx, ci })
+      : await api("/api/articles/unfail", { article_id: curArticle.id, scope, idx, ci });
     dropFail(scope, idx, ci);
     renderArtScope(scope);
-    updatePending(d.pending_fails);
+    if (!isDialog()) updatePending(d.pending_fails);
   } catch(e) { alert(e.message); }
 }
 
