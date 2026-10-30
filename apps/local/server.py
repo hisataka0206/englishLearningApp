@@ -23,10 +23,10 @@ import threading
 import urllib.request
 import urllib.error
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.42.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.44.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -827,15 +827,335 @@ def _game_sent_index():
     return idx
 
 
-def game_deck(mode="mean", cat="", general=True, limit=0):
-    """ゲームの出題プールを返す。mode=cloze のときだけ例文をつける。"""
-    items = _gloss()
+# 習熟度（Leitner）。箱が上がるほど再出題までの間隔が延び、その間は出題しない
+# ＝「得意な語は出さない」。箱0は未習・取りこぼし。
+GAME_STATS_FILE = "game_stats.json"
+LEITNER_DAYS = [0, 1, 3, 7, 16, 35]
+BOX_MAX = 5
+
+
+def _stats():
+    """{zh: {box, streak, ok, ng, last}} を返す（ファイルは辞書で保存）。"""
+    try:
+        with open(_file(GAME_STATS_FILE), encoding="utf-8") as f:
+            d = json.load(f)
+            return d if isinstance(d, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _stats_save(d):
+    tmp = _file(GAME_STATS_FILE) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, _file(GAME_STATS_FILE))
+
+
+def _today():
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+def _days_since(day):
+    if not day:
+        return 9999
+    try:
+        d = datetime.strptime(day, "%Y-%m-%d")
+    except ValueError:
+        return 9999
+    return (datetime.now() - d).days
+
+
+def _is_due(st):
+    """その語を今日出すべきか。未習(記録なし)は常に対象。"""
+    if not st:
+        return True
+    box = min(int(st.get("box", 0)), BOX_MAX)
+    return _days_since(st.get("last")) >= LEITNER_DAYS[box]
+
+
+def _stat_counts(stats, words):
+    """未出題 / 学習中(箱1-2) / 得意(箱3以上) / 今日の候補 を数える。"""
+    c = {"total": len(words), "new": 0, "learning": 0, "mastered": 0, "due": 0}
+    for zh in words:
+        st = stats.get(zh)
+        if not st or not st.get("last"):
+            c["new"] += 1
+        elif int(st.get("box", 0)) >= 3:
+            c["mastered"] += 1
+        else:
+            c["learning"] += 1
+        if _is_due(st):
+            c["due"] += 1
+    return c
+
+
+def game_answers(results):
+    """1ゲーム分の正誤をまとめて記録する。fast=速答(3秒以内)なら箱を2つ上げる。"""
+    if not isinstance(results, list) or not results:
+        return {"saved": 0}, None
+    today = _today()
+    with LOCK:
+        stats = _stats()
+        n = 0
+        for r in results[:500]:
+            zh = (r or {}).get("zh")
+            if not zh:
+                continue
+            st = stats.setdefault(zh, {"box": 0, "streak": 0, "ok": 0, "ng": 0, "last": ""})
+            box = min(int(st.get("box", 0)), BOX_MAX)
+            if r.get("ok"):
+                step = 2 if (r.get("fast") and box < 4) else 1
+                st["box"] = min(BOX_MAX, box + step)
+                st["streak"] = int(st.get("streak", 0)) + 1
+                st["ok"] = int(st.get("ok", 0)) + 1
+            else:
+                st["box"] = max(0, box - 2)
+                st["streak"] = 0
+                st["ng"] = int(st.get("ng", 0)) + 1
+            st["last"] = today
+            n += 1
+        _stats_save(stats)
+        words = [e["zh"] for e in _gloss()]
+        return {"saved": n, "counts": _stat_counts(stats, words)}, None
+
+
+def game_master(zh, box=4):
+    """「覚えた」。手動で得意（箱4＝16日後まで出題しない）にする。"""
+    if not zh:
+        return None, "zh is required"
+    with LOCK:
+        stats = _stats()
+        st = stats.setdefault(zh, {"box": 0, "streak": 0, "ok": 0, "ng": 0, "last": ""})
+        st["box"] = max(0, min(BOX_MAX, int(box)))
+        st["last"] = _today()
+        _stats_save(stats)
+    return {"zh": zh, "box": st["box"]}, None
+
+
+def game_stats(limit=40):
+    """記録画面用。全体の内訳と、取りこぼしの多い語を返す。"""
+    gl = _gloss()
+    stats = _stats()
+    counts = _stat_counts(stats, [e["zh"] for e in gl])
+    rows = []
+    for e in gl:
+        st = stats.get(e["zh"])
+        if not st or not st.get("ng") or int(st.get("box", 0)) >= 3:
+            continue   # 得意になったものは要注意リストから外す
+        rows.append({"zh": e["zh"], "py": py_mark(e.get("pinyin") or ""),
+                     "ja": e.get("ja", ""), "cat": _gloss_cat(e),
+                     "box": int(st.get("box", 0)), "ok": int(st.get("ok", 0)),
+                     "ng": int(st.get("ng", 0)), "last": st.get("last", ""),
+                     "due": _is_due(st)})
+    rows.sort(key=lambda r: (r["box"], -r["ng"], r["zh"]))
+    return {"counts": counts, "weak": rows[:max(1, limit)],
+            "weak_total": len(rows)}, None
+
+
+# ------------------------------------------------------------ 学習計画・プレイ記録
+GAME_SESSIONS_FILE = "game_sessions.json"
+GAME_PLAN_FILE = "game_plan.json"
+PLAN_BAND = (0.65, 0.78)          # 正答率の目標帯（7割課題）
+GEAR_CHOICES = [4, 6, 8]          # ギアが上がるほど選択肢が増える
+# エリア（分類）は小さい順に攻略する。最初の数日でクリアが並ぶように。
+AREA_CLEAR = 0.70                 # 得意率がこれを超えたらクリア
+
+
+def _plan():
+    try:
+        with open(_file(GAME_PLAN_FILE), encoding="utf-8") as f:
+            d = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        d = {}
+    d.setdefault("goal", 30)          # 1日の目標問題数
+    d.setdefault("new_ratio", 0.6)    # 新規の割合（正答率70%のつまみ その1）
+    d.setdefault("gear", 0)           # 選択肢の数（つまみ その2）
+    d.setdefault("adjusted", "")
+    return d
+
+
+def _plan_save(d):
+    tmp = _file(GAME_PLAN_FILE) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, _file(GAME_PLAN_FILE))
+
+
+def _sessions():
+    try:
+        with open(_file(GAME_SESSIONS_FILE), encoding="utf-8") as f:
+            d = json.load(f)
+            return d if isinstance(d, list) else []
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def _daily(sessions, days=70):
+    """日付ごとの {問題数, 正解数, ゲーム数}。直近 days 日分を古い順で返す。"""
+    agg = {}
+    for s in sessions:
+        d = s.get("date") or (s.get("at") or "")[:10]
+        if not d:
+            continue
+        a = agg.setdefault(d, {"date": d, "asked": 0, "correct": 0, "games": 0})
+        a["asked"] += int(s.get("asked") or 0)
+        a["correct"] += int(s.get("correct") or 0)
+        a["games"] += 1
+    out = []
+    for i in range(days - 1, -1, -1):
+        d = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
+        out.append(agg.get(d, {"date": d, "asked": 0, "correct": 0, "games": 0}))
+    return out
+
+
+def _streak(daily, goal):
+    """目標を達成した日が何日続いているか（今日がまだなら昨日までで数える）。"""
+    cur = 0
+    for row in reversed(daily):
+        if row["asked"] >= goal:
+            cur += 1
+        elif row["date"] == daily[-1]["date"]:
+            continue           # 今日はまだ途中。途切れとは数えない
+        else:
+            break
+    best = run = 0
+    for row in daily:
+        run = run + 1 if row["asked"] >= goal else 0
+        best = max(best, run)
+    week = sum(1 for row in daily[-7:] if row["asked"] >= goal)
+    return {"current": cur, "best": best, "week": week}
+
+
+def _areas(stats):
+    """分類ごとの習熟度。語数の少ない順＝攻略順に並べる。"""
+    by = {}
+    for e in _gloss():
+        c = _gloss_cat(e)
+        a = by.setdefault(c, {"name": c, "total": 0, "new": 0, "learning": 0, "mastered": 0})
+        st = stats.get(e["zh"])
+        a["total"] += 1
+        if not st or not st.get("last"):
+            a["new"] += 1
+        elif int(st.get("box", 0)) >= 3:
+            a["mastered"] += 1
+        else:
+            a["learning"] += 1
+    out = []
+    for c in GLOSS_CATS:
+        a = by.get(c)
+        if not a:
+            continue
+        a["pct"] = round(a["mastered"] / a["total"] * 100) if a["total"] else 0
+        a["cleared"] = a["total"] > 0 and a["mastered"] / a["total"] >= AREA_CLEAR
+        out.append(a)
+    out.sort(key=lambda a: (a["name"] == "一般", a["total"]))   # 小さい順・一般は最後
+    return out
+
+
+def game_plan_adjust(force=False):
+    """直近3日の正答率を見て、新規比率とギアを動かす（1日1回）。"""
+    plan = _plan()
+    today = _today()
+    if plan.get("adjusted") == today and not force:
+        return plan
+    daily = _daily(_sessions(), days=4)[:-1] if False else _daily(_sessions(), days=3)
+    asked = sum(d["asked"] for d in daily)
+    if asked < 20:
+        return plan            # 判断材料が足りないうちは動かさない
+    acc = sum(d["correct"] for d in daily) / asked
+    lo, hi = PLAN_BAND
+    if acc > hi:               # 簡単すぎる
+        if plan["new_ratio"] < 0.95:
+            plan["new_ratio"] = round(min(0.95, plan["new_ratio"] + 0.05), 2)
+        elif plan["gear"] < len(GEAR_CHOICES) - 1:
+            plan["gear"] += 1
+    elif acc < lo:             # 難しすぎる
+        if plan["gear"] > 0 and plan["new_ratio"] <= 0.2:
+            plan["gear"] -= 1
+        else:
+            plan["new_ratio"] = round(max(0.15, plan["new_ratio"] - 0.05), 2)
+    plan["adjusted"] = today
+    _plan_save(plan)
+    return plan
+
+
+def game_session(s):
+    """1ゲーム分の記録を残す。"""
+    if not isinstance(s, dict):
+        return None, "bad session"
+    asked = int(s.get("asked") or 0)
+    if asked <= 0:
+        return {"saved": 0}, None
+    row = {"at": now(), "date": _today(), "mode": str(s.get("mode") or "")[:16],
+           "scope": str(s.get("scope") or "")[:24], "asked": asked,
+           "correct": max(0, min(asked, int(s.get("correct") or 0))),
+           "score": int(s.get("score") or 0), "best": int(s.get("best") or 0),
+           "limit": int(s.get("limit") or 0), "level": int(s.get("level") or 0)}
+    with LOCK:
+        rows = _sessions()
+        rows.append(row)
+        rows = rows[-500:]
+        tmp = _file(GAME_SESSIONS_FILE) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(rows, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, _file(GAME_SESSIONS_FILE))
+    plan = game_plan_adjust()
+    return {"saved": 1, "plan": plan}, None
+
+
+def game_history(days=56):
+    plan = _plan()
+    sessions = _sessions()
+    daily = _daily(sessions, days=days)
+    today = daily[-1]
+    stats = _stats()
+    acc7 = []
+    for i in range(len(daily)):
+        win = [d for d in daily[max(0, i-6):i+1] if d["asked"]]
+        a = sum(d["asked"] for d in win)
+        acc7.append({"date": daily[i]["date"],
+                     "acc": round(sum(d["correct"] for d in win) / a * 100) if a else None})
+    modes = {}
+    for s in sessions[-200:]:
+        m = modes.setdefault(s.get("mode") or "?", {"asked": 0, "correct": 0, "games": 0})
+        m["asked"] += int(s.get("asked") or 0)
+        m["correct"] += int(s.get("correct") or 0)
+        m["games"] += 1
+    return {"plan": plan, "band": [int(PLAN_BAND[0]*100), int(PLAN_BAND[1]*100)],
+            "choices": GEAR_CHOICES[min(plan["gear"], len(GEAR_CHOICES)-1)],
+            "today": today, "goal": plan["goal"],
+            "daily": daily, "acc7": acc7,
+            "streak": _streak(daily, plan["goal"]),
+            "modes": modes, "areas": _areas(stats),
+            "sessions": list(reversed(sessions[-20:])),
+            "counts": _stat_counts(stats, [e["zh"] for e in _gloss()])}, None
+
+
+def game_goal(goal):
+    plan = _plan()
+    plan["goal"] = max(10, min(300, int(goal)))
+    _plan_save(plan)
+    return plan, None
+
+
+def game_deck(mode="mean", cat="", general=True, limit=0, scope=""):
+    """ゲームの出題プールを返す。
+
+    scope=""     : 今日出すべき語だけ（得意な語＝間隔の内側にある語は出さない）
+    scope="all"  : 習熟度を無視して全部
+    scope="weak" : 取りこぼしのある語（箱0-1でミス経験あり）
+    mode=cloze のときだけ記事の例文をつける。
+    """
+    gl = _gloss()
+    items = gl
     if cat:
         items = [e for e in items if _gloss_cat(e) == cat]
     elif not general:
         items = [e for e in items if _gloss_cat(e) != "一般"]
     idx = _game_sent_index() if mode == "cloze" else {}
-    out = []
+    stats = _stats()
+
+    usable = []
     for e in items:
         zh, ja = e["zh"], (e.get("ja") or "").strip()
         if not ja or not zh:
@@ -845,16 +1165,39 @@ def game_deck(mode="mean", cat="", general=True, limit=0):
         ex = idx.get(zh) or []
         if mode == "cloze" and not ex:
             continue
-        out.append({"zh": zh, "py": py_mark(e.get("pinyin") or ""), "ja": ja,
-                    "cat": _gloss_cat(e), "freq": e.get("freq") or 0, "ex": ex[:2]})
+        st = stats.get(zh) or {}
+        usable.append({"zh": zh, "py": py_mark(e.get("pinyin") or ""), "ja": ja,
+                       "cat": _gloss_cat(e), "freq": e.get("freq") or 0, "ex": ex[:2],
+                       "box": int(st.get("box", 0)), "ng": int(st.get("ng", 0)),
+                       "new": not st.get("last"), "due": _is_due(st)})
+
+    if scope == "weak":
+        out = [x for x in usable if x["ng"] and x["box"] <= 1]
+    elif scope == "all":
+        out = usable
+    else:
+        out = [x for x in usable if x["due"]]
+    # 候補が少なすぎると4択が作れないので、間隔の近い順に埋める
+    if len(out) < 12:
+        picked = {x["zh"] for x in out}
+        rest = sorted((x for x in usable if x["zh"] not in picked),
+                      key=lambda x: (x["box"], -x["freq"]))
+        out = out + rest[:12 - len(out)]
+
     out.sort(key=lambda x: (-(x["freq"]), x["zh"]))
     if limit and limit > 0:
         out = out[:limit]
     counts = {}
-    for e in _gloss():
+    for e in gl:
         c = _gloss_cat(e)
         counts[c] = counts.get(c, 0) + 1
+    scoped = [x["zh"] for x in usable]
+    plan = _plan()
     return {"mode": mode, "items": out, "total": len(out),
+            "counts": _stat_counts(stats, scoped),
+            "plan": plan, "goal": plan["goal"],
+            "choices": GEAR_CHOICES[min(plan["gear"], len(GEAR_CHOICES) - 1)],
+            "new_ratio": plan["new_ratio"],
             "cats": [{"name": c, "n": counts.get(c, 0)} for c in GLOSS_CATS]}, None
 
 
@@ -1747,7 +2090,18 @@ class Handler(BaseHTTPRequestHandler):
             data, err = game_deck(mode=(q.get("mode") or ["mean"])[0],
                                   cat=(q.get("cat") or [""])[0],
                                   general=(q.get("general") or ["1"])[0] != "0",
-                                  limit=int((q.get("limit") or ["0"])[0] or 0))
+                                  limit=int((q.get("limit") or ["0"])[0] or 0),
+                                  scope=(q.get("scope") or [""])[0])
+            self._ok(data) if not err else self._fail(err)
+        elif self.path.startswith("/api/game/history"):
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query)
+            data, err = game_history(int((q.get("days") or ["56"])[0] or 56))
+            self._ok(data) if not err else self._fail(err)
+        elif self.path.startswith("/api/game/stats"):
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query)
+            data, err = game_stats(int((q.get("limit") or ["40"])[0] or 40))
             self._ok(data) if not err else self._fail(err)
         elif self.path.startswith("/api/glossary/push"):
             data, err = glossary_push_status()
@@ -1875,6 +2229,14 @@ class Handler(BaseHTTPRequestHandler):
             data, err = article_session(body.get("article_id"))
         elif self.path == "/api/assessments/clear":
             data, err = clear_assessments(body.get("lang"))
+        elif self.path == "/api/game/answers":
+            data, err = game_answers(body.get("results"))
+        elif self.path == "/api/game/session":
+            data, err = game_session(body.get("session") or body)
+        elif self.path == "/api/game/goal":
+            data, err = game_goal(body.get("goal", 30))
+        elif self.path == "/api/game/master":
+            data, err = game_master(body.get("zh"), body.get("box", 4))
         elif self.path == "/api/glossary/cat":
             data, err = glossary_update(body.get("zh"), cat=body.get("cat"),
                                         ja=body.get("ja"), pinyin=body.get("pinyin"))

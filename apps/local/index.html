@@ -50,6 +50,18 @@
   .gmbar > i.warn { background:#f08c00; }
   .gmbar > i.danger { background:#d33; }
   .gmbest { color:#f08c00; font-weight:700; }
+  .hm { display:grid; grid-template-rows:repeat(7,11px); grid-auto-flow:column; gap:3px; }
+  .hm i { width:11px; height:11px; border-radius:3px; background:#eef0f6; display:block; }
+  .hm i.l1 { background:#cfe3ff; } .hm i.l2 { background:#8fbcff; }
+  .hm i.l3 { background:#4a90e2; } .hm i.l4 { background:#1f5fa8; }
+  .trend { position:relative; height:92px; border-radius:10px; background:#fafbff;
+    border:1px solid #eef0f6; overflow:hidden; margin:6px 0 2px; }
+  .trend .band { position:absolute; left:0; right:0; background:rgba(42,168,74,.12);
+    border-top:1px dashed #2aa84a; border-bottom:1px dashed #2aa84a; }
+  .trend svg { position:absolute; inset:0; width:100%; height:100%; }
+  .arow { display:flex; align-items:center; gap:8px; padding:5px 0; }
+  .arow .abar { flex:1; height:9px; background:#eef0f6; border-radius:999px; overflow:hidden; }
+  .arow .abar i { display:block; height:100%; background:#2aa84a; }
   .gmword { font-size:40px; text-align:center; letter-spacing:.08em; margin:14px 0 6px; }
   .gmword span.done { color:#2aa84a; }
   .gmword span.ng { color:#d33; }
@@ -309,6 +321,7 @@
       <span class="sub">範囲</span>
       <select id="gmCatSel" onchange="gameSetCat(this.value)" style="flex:1;min-width:150px"></select>
     </div>
+    <div class="sub" id="gmSummary" style="margin:-4px 0 8px"></div>
     <div class="row" style="margin:0 0 12px;align-items:center">
       <span class="sub">制限時間</span>
       <button class="small tab" id="gmT60" onclick="gameSetTime(60)">60秒</button>
@@ -336,7 +349,6 @@
       <b>📰 記事で穴埋め</b>
       <div class="sub">実際の記事の文の空欄に入る語を選ぶ</div>
     </div>
-    <div class="sub" id="gmWeak" style="margin-top:6px"></div>
   </div>
 
   <div class="card" id="gmPlay" style="display:none">
@@ -368,7 +380,9 @@
   <div class="row" style="margin-bottom:10px">
     <button class="tab small active" id="rtab_weak" onclick="setRecTab('weak')">苦手</button>
     <button class="tab small" id="rtab_hist" onclick="setRecTab('hist')">履歴</button>
-    <button class="small ghost" style="margin-left:auto" onclick="clearRecords()" title="この言語の記録を全部消す">🗑</button>
+    <button class="tab small" id="rtab_word" onclick="setRecTab('word')">単語</button>
+    <button class="tab small" id="rtab_play" onclick="setRecTab('play')">プレイ</button>
+    <button class="small ghost" id="rtab_clear" style="margin-left:auto" onclick="clearRecords()" title="この言語の記録を全部消す">🗑</button>
   </div>
   <div class="card"><div id="recordBody">読み込み中…</div></div>
 </div>
@@ -1085,7 +1099,7 @@ let view = "main";
 
 function showView(v) {
   readStop();
-  if (view === "game" && v !== "game") { gameClock(false); fallStop(); gm.locked = true; }  // ゲーム中に他タブへ出たら時計を止める
+  if (view === "game" && v !== "game") { gameClock(false); fallStop(); gameFlush(); gm.locked = true; }  // ゲーム中に他タブへ出たら時計を止める
   view = v;
   document.getElementById("viewMain").style.display = v === "main" ? "" : "none";
   document.getElementById("viewArticles").style.display = v === "articles" ? "" : "none";
@@ -1109,6 +1123,11 @@ function showView(v) {
 const GAME_DEMO = [{"zh":"供应链","py":[["gong",1],["ying",4],["lian",4]],"ja":"サプライチェーン","cat":"サプライチェーン","freq":9,"ex":["6月22日，第四届中国国际供应链促进博览会（链博会）在北京正式开幕。","中国之所以在价格上压倒性获胜，根本原因是它掌握了整条供应链。"]},{"zh":"关节","py":[["guan",1],["jie",2]],"ja":"関節","cat":"減速・伝動・機構","freq":9,"ex":["空心杯电机结构紧凑、无齿槽效应，适合高动态响应的指关节。","目前已有八家上市公司切入人形机器人关节用无框力矩电机领域。"]},{"zh":"减速比","py":[["jian",3],["su",4],["bi",3]],"ja":"減速比","cat":"減速・伝動・機構","freq":9,"ex":["高减速比还会放大反射惯量与反射摩擦，使力透明性下降、反驱动性能变弱。","减速比不仅放大力矩，还会把电机转子惯量按减速比的平方折算到输出端。"]},{"zh":"精度","py":[["jing",1],["du",4]],"ja":"精度","cat":"センサー・知覚","freq":8,"ex":["在量产过程中，“小赛”承担高精度、高重复、高精细的作业。","智元还在上汽通用超级工厂的电池产线实现±0.1毫米高精度定位作业。"]},{"zh":"传动","py":[["chuan",2],["dong",4]],"ja":"駆動","cat":"減速・伝動・機構","freq":7,"ex":["关节的旋转运动多采用谐波减速器，其制造基础是谐波传动。","在这个基础上，减速器的传动特性进一步放大了没有抱闸的缺陷。"]},{"zh":"减速器","py":[["jian",3],["su",4],["qi",4]],"ja":"減速機・ギヤボックス","cat":"減速・伝動・機構","freq":7,"ex":["关节的旋转运动多采用谐波减速器，其制造基础是谐波传动。","通常一台谐波减速器会使用一个交叉滚子轴承和一个柔性轴承。"]},{"zh":"壳体","py":[["ke",2],["ti",3]],"ja":"ハウジング","cat":"材料・構造・熱","freq":7,"ex":["两级内齿圈加工在同一个铝制壳体上，太阳轮、行星架与行星轮沿轴向堆叠。","结论先行：壳体用铝没有争议，轴系用钢是行业共识。"]},{"zh":"控制","py":[["kong",4],["zhi",4]],"ja":"制御","cat":"AI・制御","freq":7,"ex":["它把全身控制重新定义为连续的序列预测问题。","全身控制是人形机器人从“能站”到“能动”的关键环节，长期是行业难点。"]},{"zh":"数据","py":[["shu",4],["ju",4]],"ja":"データ","cat":"AI・制御","freq":7,"ex":["在训练数据上，模型混合了真实机器人轨迹、人类视频和合成数据。","这种异质混合有效缓解了机器人数据稀缺的难题，使泛化能力更强。"]},{"zh":"扭矩","py":[["niu",3],["ju",3]],"ja":"トルク","cat":"モーター・駆動","freq":6,"ex":["由于电机高转速、低扭矩，关节必须依靠减速器实现低速稳定的大扭矩输出。","螺丝扭矩值、关节模组标定数据和整机运动曲线都与唯一的产品序列号绑定。"]},{"zh":"零部件","py":[["ling",2],["bu",4],["jian",4]],"ja":"部品・構成部品","cat":"サプライチェーン","freq":6,"ex":["宁波，这座以模具和小家电制造闻名的城市，如今成了机器人零部件的重镇。","这意味着，人形机器人正在形成从整机、零部件到系统集成的完整产业链条。"]},{"zh":"供应商","py":[["gong",1],["ying",4],["shang",1]],"ja":"サプライヤー","cat":"サプライチェーン","freq":5,"ex":["客户不需要再去协调多家供应商，就能实现“交钥匙”式生产。","目前各家供应商正在推进产线排产，为规模化生产做准备。"]},{"zh":"执行器","py":[["zhi",2],["xing",2],["qi",4]],"ja":"アクチュエーター","cat":"モーター・駆動","freq":5,"ex":["按传动部件与电机的结合方式，关节执行器可分为柔性、弹性和准直驱三类。","舍弗勒已承诺采购数千台 NEURA 机器人，并供应高扭矩执行器。"]},{"zh":"效率","py":[["xiao",4],["lv",4]],"ja":"効率","cat":"一般","freq":5,"ex":["第四个好处是性能优化，内部零部件经过深度匹配之后，传动效率明显提高。","内部零件深度匹配，传动效率随之提升。"]},{"zh":"整机","py":[["zheng",3],["ji",1]],"ja":"完成機（本体まるごと）","cat":"ロボット本体・種別","freq":5,"ex":["这意味着，人形机器人正在形成从整机、零部件到系统集成的完整产业链条。","这意味着安全方案与整机厂商的深度绑定，正在成为行业新的竞争维度。"]},{"zh":"转速","py":[["zhuan",4],["su",4]],"ja":"回転数","cat":"モーター・駆動","freq":5,"ex":["由于电机高转速、低扭矩，关节必须依靠减速器实现低速稳定的大扭矩输出。","它的作用是化解电机\"高转速低扭矩\"与关节\"低转速高扭矩\"之间的矛盾。"]},{"zh":"运动","py":[["yun",4],["dong",4]],"ja":"運動","cat":"AI・制御","freq":5,"ex":["关节的旋转运动多采用谐波减速器，其制造基础是谐波传动。","这一发布被视为人形机器人“运动大脑”走向通用化的重要一步。"]},{"zh":"集成","py":[["ji",2],["cheng",2]],"ja":"集積・統合","cat":"一般","freq":5,"ex":["这意味着，人形机器人正在形成从整机、零部件到系统集成的完整产业链条。","人形机器人的关节模组正在从\"零件堆叠\"走向\"一体化集成设计\"。"]},{"zh":"关键","py":[["guan",1],["jian",4]],"ja":"カギとなる","cat":"一般","freq":4,"ex":["全身控制是人形机器人从“能站”到“能动”的关键环节，长期是行业难点。","报告把2026年称为从“试点”走向“平台”的关键一年。"]},{"zh":"准直驱","py":[["zhun",3],["zhi",2],["qu",1]],"ja":"準ダイレクトドライブ","cat":"モーター・駆動","freq":4,"ex":["近年来，准直驱关节技术成为平衡高性能与实用化需求的重要工程路径。","按传动部件与电机的结合方式，关节执行器可分为柔性、弹性和准直驱三类。"]},{"zh":"力控","py":[["li",4],["kong",4]],"ja":"力制御","cat":"AI・制御","freq":4,"ex":["智元远征A1全身采用统一的八比一架构，实现一毫秒周期的无传感器力控。","不过其刚度通常低于一万牛米每弧度，输出阻抗低，力控带宽因此受限。"]},{"zh":"状态","py":[["zhuang",4],["tai",4]],"ja":"状態","cat":"一般","freq":4,"ex":["这与三年前\"整机企业自研一切\"的状态形成了鲜明的对比。","第二步是运动规划，六轴机械臂的状态是六维关节空间里的一个点。"]},{"zh":"装配","py":[["zhuang",1],["pei",4]],"ja":"組み付け・アセンブリ","cat":"製造・量産","freq":4,"ex":["它常用于焊接、装配、搬运、喷涂、打磨和码垆等重复性生产作业。","即插即用的结构还能大幅缩短整机的装配时间。"]},{"zh":"轻量化","py":[["qing",1],["liang",4],["hua",4]],"ja":"軽量化","cat":"材料・構造・熱","freq":4,"ex":["同级机型普遍超过六十公斤，她因此轻量化了百分之二十以上。","高级则要求方案优化、应力分析与轻量化设计，并综合优化加工和装配工艺。"]}];
 
 let GAME_DECK = GAME_DEMO;          // 単語帳から読み込むまでの暫定
+let gmCounts = null;                // 未出題／学習中／得意／今日の候補
+let gmPlan = { goal: 30, new_ratio: 0.6, gear: 0 };
+let gmChoiceN = 4;                  // ギアで増える選択肢の数
+let gmToday = { asked: 0, correct: 0 };
+let gmLog = [], gmFlushT = null;    // 正誤はまとめてサーバーへ送る
 let gmCat = localStorage.getItem("gmCat") || "spec";
 let gmCats = [];
 const TONE_MARKS = { a:"āáǎà", e:"ēéěè", i:"īíǐì", o:"ōóǒò", u:"ūúǔù", "ü":"ǖǘǚǜ" };
@@ -1169,11 +1188,10 @@ function gameSetCat(c) {
 function gameRenderCats() {
   const sel = document.getElementById("gmCatSel");
   if (!sel) return;
-  const weakN = gameWeak().length;
   const spec = gmCats.filter(c => c.name !== "一般").reduce((a, c) => a + c.n, 0);
   const all = gmCats.reduce((a, c) => a + c.n, 0);
-  const opts = [["spec", `専門のみ（${spec || "…"}語）`], ["all", `すべて（${all || "…"}語）`]]
-    .concat(weakN >= 4 ? [["weak", `苦手だけ（${weakN}語）`]] : [])
+  const opts = [["spec", `専門のみ（${spec || "…"}語）`], ["all", `すべて（${all || "…"}語）`],
+                ["weak", "要注意だけ（取りこぼした語）"]]
     .concat(gmCats.map(c => [c.name, `${c.name}（${c.n}語）`]));
   sel.innerHTML = opts.map(([v, t]) =>
     `<option value="${esc(v)}"${v === gmCat ? " selected" : ""}>${esc(t)}</option>`).join("");
@@ -1190,53 +1208,107 @@ async function gameMenu() {
   document.getElementById("gmPlay").style.display = "none";
   document.getElementById("gmResult").style.display = "none";
   gameRenderCats();
-  if (!gmCats.length) {
+  gameSummary();
+  gameFlush();
+  try {
+    const d = await api("/api/game/deck?mode=mean&limit=1&scope=all");
+    gmCats = d.cats || [];
+    gmCounts = d.counts || null;
+    if (d.plan) gmPlan = d.plan;
+    if (d.choices) gmChoiceN = d.choices;
+    gameRenderCats();
+    gameSummary();
     try {
-      const d = await api("/api/game/deck?mode=mean&limit=1");
-      gmCats = d.cats || [];
-      gameRenderCats();
-    } catch (e) { /* 単語帳が読めなければお試しデッキのまま */ }
+      const h = await api("/api/game/history?days=1");
+      gmToday = h.today || gmToday;
+      gameSummary();
+    } catch (e) {}
+  } catch (e) { /* 単語帳が読めなければお試しデッキのまま */ }
+}
+
+// 正誤はサーバーの習熟度（Leitner）に記録する。端末が変わっても続きから。
+function gameLogAnswer(w, ok, sec) {
+  if (!w || !w.zh) return;
+  gmLog.push({ zh: w.zh, ok: !!ok, fast: !!ok && sec <= 3 });
+  clearTimeout(gmFlushT);
+  gmFlushT = setTimeout(gameFlush, 2500);
+}
+
+async function gameSaveSession(asked, correct) {
+  if (!asked) return;
+  gmToday = { asked: (gmToday.asked || 0) + asked,
+              correct: (gmToday.correct || 0) + correct };
+  try {
+    const d = await api("/api/game/session", {
+      mode: gm.mode, scope: gmCat, asked, correct, score: gm.score,
+      best: gm.best, limit: gm.limit, level: (fall && fall.level) || 0 });
+    if (d && d.plan) {
+      gmPlan = d.plan;
+      gmChoiceN = [4, 6, 8][Math.min(d.plan.gear || 0, 2)];
+    }
+  } catch (e) { /* あとで送る */ }
+}
+
+async function gameFlush() {
+  clearTimeout(gmFlushT);
+  if (!gmLog.length) return;
+  const batch = gmLog;
+  gmLog = [];
+  try {
+    const d = await api("/api/game/answers", { results: batch });
+    if (d && d.counts) { gmCounts = d.counts; gameSummary(); }
+  } catch (e) {
+    gmLog = batch.concat(gmLog);   // 送れなければ次の機会に
   }
-  const w = gameWeak();
-  document.getElementById("gmWeak").textContent =
-    w.length ? `苦手リスト: ${w.slice(0, 8).map(x => x.zh).join("・")}${w.length > 8 ? " ほか" : ""}（${w.length}語）` : "";
 }
 
-function gameWeak() {
-  try { return JSON.parse(localStorage.getItem("gameMiss") || "[]"); } catch (e) { return []; }
+function gameSummary() {
+  const el = document.getElementById("gmSummary");
+  if (!el) return;
+  const c = gmCounts;
+  const goal = gmPlan.goal || 30;
+  const done = gmToday.asked || 0;
+  const bar = `<div style="display:inline-block;width:70px;height:7px;background:#eef0f6;border-radius:999px;
+      overflow:hidden;vertical-align:middle;margin:0 6px">
+      <i style="display:block;height:100%;width:${Math.min(100, done / goal * 100)}%;
+      background:${done >= goal ? "#2aa84a" : "var(--accent)"}"></i></div>`;
+  el.innerHTML =
+    `今日 <b>${done}/${goal}</b>問${bar}${done >= goal ? "達成！" : ""}` +
+    (c ? `<br>候補 ${c.due}語　｜　未出題 ${c.new}・学習中 ${c.learning}・得意 ${c.mastered}`
+       : "") +
+    (gmChoiceN > 4 ? `　｜　いまのギア ${gmChoiceN}択` : "");
 }
 
-function gameSaveMiss(w) {
-  const list = gameWeak();
-  const hit = list.find(x => x.zh === w.zh);
-  if (hit) { hit.n = (hit.n || 1) + 1; hit.at = Date.now(); }
-  else list.push({ zh: w.zh, ja: w.ja, n: 1, at: Date.now() });
-  try { localStorage.setItem("gameMiss", JSON.stringify(list.slice(-200))); } catch (e) {}
-}
-
-function gameQuit() { gameClock(false); fallStop(); gameMenu(); }
+function gameQuit() { gameClock(false); fallStop(); gameFlush(); gameMenu(); }
 
 function gamePool(mode) {
   let pool = GAME_DECK.slice();
   if (mode === "cloze") pool = pool.filter(w => (w.ex || []).length);
   if (mode === "build") pool = pool.filter(w => w.zh.length >= 2);
-  // 苦手な語を先頭に寄せる（簡易の忘却曲線）
-  const weak = gameWeak().map(x => x.zh);
-  return gmShuffle(pool.filter(w => weak.includes(w.zh)))
-    .concat(gmShuffle(pool.filter(w => !weak.includes(w.zh))));
+  // 新規と復習の比率は計画（正答率70%をねらう自動調整）に従う
+  const nw = gmShuffle(pool.filter(w => w.new));
+  const rv = gmShuffle(pool.filter(w => !w.new));
+  if (!nw.length || !rv.length) return gmShuffle(pool);
+  const a = Math.max(1, Math.round((gmPlan.new_ratio || 0.6) * 10));
+  const b = Math.max(1, 10 - a);
+  const out = [];
+  let i = 0, j = 0;
+  while (i < nw.length || j < rv.length) {
+    for (let k = 0; k < a && i < nw.length; k++) out.push(nw[i++]);
+    for (let k = 0; k < b && j < rv.length; k++) out.push(rv[j++]);
+  }
+  return out;
 }
 
 async function gameLoadDeck(mode) {
   const cat = ["all", "spec", "weak"].includes(gmCat) ? "" : gmCat;
-  const qs = new URLSearchParams({ mode, cat, general: gmCat === "spec" ? "0" : "1" });
+  const qs = new URLSearchParams({ mode, cat, scope: gmCat === "weak" ? "weak" : "",
+                                   general: gmCat === "spec" ? "0" : "1" });
   const d = await api("/api/game/deck?" + qs.toString());
-  let items = d.items || [];
-  if (gmCat === "weak") {
-    const w = gameWeak().map(x => x.zh);
-    const f = items.filter(x => w.includes(x.zh));
-    if (f.length >= 4) items = f;
-  }
-  return items;
+  gmCounts = d.counts || gmCounts;
+  if (d.plan) gmPlan = d.plan;
+  if (d.choices) gmChoiceN = d.choices;
+  return d.items || [];
 }
 
 async function gameStart(mode) {
@@ -1336,8 +1408,9 @@ function gameScore(ok, w) {
     gm.score += 10 + Math.max(0, (gm.combo - 1) * 2) + fast;
     if (gm.limit) gm.left += (GAME_BONUS[gm.mode] || 2) * 1000;   // 正解で時間が増える
   } else {
-    gm.combo = 0; gm.miss.push(w); gameSaveMiss(w);
+    gm.combo = 0; gm.miss.push(w);
   }
+  gameLogAnswer(w, ok, sec);
   gameHead();
 }
 
@@ -1401,7 +1474,17 @@ function fallNextWord() {
 function fallDecoy() {
   const used = fall.items.map(i => i.w.ja);
   const pool = (fall.pool.length ? fall.pool : GAME_DECK).filter(w => !used.includes(w.ja));
-  const w = pool[Math.floor(Math.random() * pool.length)];
+  if (!pool.length) return null;
+  // いま落ちている語のどれかと同じくらいの長さにする（長さで当てられないように）
+  const base = fall.items.length
+    ? fall.items[Math.floor(Math.random() * fall.items.length)].w : null;
+  let cand = pool;
+  if (base) {
+    const len = base.w ? base.w.zh.length : base.zh.length;
+    const near = pool.filter(x => Math.abs(x.zh.length - len) <= 1);
+    if (near.length) cand = near;
+  }
+  const w = cand[Math.floor(Math.random() * cand.length)];
   return w ? { ja: w.ja, zh: null } : null;
 }
 
@@ -1484,7 +1567,8 @@ function fallRemove(i, cls) {
 function fallLand(i) {
   const it = fall.items[i];
   gm.asked++; gm.combo = 0;
-  gm.miss.push(it.w); gameSaveMiss(it.w);
+  gm.miss.push(it.w);
+  gameLogAnswer(it.w, false, 99);
   fall.lives--;
   fallToast(`取り逃し　<b>${esc(it.w.zh)}</b> ${esc(pyFull(it.w))} ${esc(it.w.ja)}`, "ng");
   fallRemove(i, "land");
@@ -1510,6 +1594,7 @@ function fallTap(si) {
   const high = Math.max(0, Math.round((1 - it.y / Math.max(1, fall.h)) * 10));  // 高い位置で倒すほど高得点
   gm.score += 10 + Math.max(0, (gm.combo - 1) * 2) + high;
   fall.cleared++;
+  gameLogAnswer(it.w, true, 99);
   if (fall.cleared % 8 === 0) fall.level++;
   fallToast(`<b>${esc(it.w.zh)}</b> ${esc(pyFull(it.w))} ${esc(it.w.ja)}　+${10 + Math.max(0, (gm.combo - 1) * 2) + high}`, "ok");
   speechSynthesis.cancel();
@@ -1532,12 +1617,24 @@ function fallOver() {
 }
 
 // --- 意味当て（漢字 → 日本語） ---
+// ダミーの選び方：まず「文字数＝音の長さが同じ」語、次に±1文字。
+// 2文字と5文字が並ぶと、長さだけで答えが分かってしまうため。
+// 同じ長さの中では、同じ分類の語を優先する（意味が近いほど難しい）。
+function gameDecoys(w, others, n) {
+  const len = w.zh.length;
+  const tier = (d, sameCat) => gmShuffle(others.filter(x =>
+    Math.abs(x.zh.length - len) === d && (x.cat === w.cat) === sameCat));
+  const out = [];
+  [tier(0, true), tier(0, false), tier(1, true), tier(1, false),
+   gmShuffle(others.filter(x => Math.abs(x.zh.length - len) >= 2))].forEach(list => {
+    list.forEach(x => { if (out.length < n && !out.includes(x)) out.push(x); });
+  });
+  return out.slice(0, n);
+}
+
 function gameChoices(w, key) {
-  // 同じ分類の語をダミーに優先する（意味が近いほど難しくなる）
   const others = GAME_DECK.filter(x => x.zh !== w.zh && x[key] !== w[key]);
-  const near = gmShuffle(others.filter(x => x.cat === w.cat));
-  const far = gmShuffle(others.filter(x => x.cat !== w.cat));
-  return gmShuffle([w].concat(near.concat(far).slice(0, 3)));
+  return gmShuffle([w].concat(gameDecoys(w, others, Math.max(3, gmChoiceN - 1))));
 }
 
 function qMean() {
@@ -1569,13 +1666,28 @@ function qEar() {
   const w = gm.cur;
   const ch = gameChoices(w, "ja");
   document.getElementById("gmBody").innerHTML =
-    `<div style="text-align:center;margin:18px 0 6px">
-       <button class="primary" style="font-size:30px;padding:16px 26px;border-radius:50%" onclick="speakZh('${w.zh}')">🔊</button>
+    `<div style="text-align:center;margin:18px 0 2px">
+       <button class="primary" style="font-size:30px;padding:16px 26px;border-radius:50%" onclick="earPlay()">🔊</button>
+     </div>
+     <div style="text-align:center;margin:0 0 6px">
+       <button class="small ghost" onclick="earPlay(0.75)">🐢 ゆっくり</button>
+       <button class="small ghost" onclick="earPlay()">🔁 もう一度</button>
      </div>
      <div class="gmpy" id="gmEp">？</div>
      <div class="gmchoices">${ch.map(c =>
        `<button data-zh="${esc(c.zh)}" onclick="tapEar('${c.zh}')">${esc(jaShort(c.ja))}</button>`).join("")}</div>`;
-  setTimeout(() => speakZh(w.zh), 250);
+  setTimeout(() => earPlay(), 350);
+}
+
+// 耳モードの再生。速度を落として聞き直すこともできる
+function earPlay(rate) {
+  const w = gm.cur;
+  if (!w) return;
+  speechSynthesis.cancel();
+  try { speechSynthesis.resume(); } catch (e) {}
+  zhWarm();
+  const base = parseFloat(document.getElementById("rate").value) || 1;
+  speechSynthesis.speak(zhUtter(w.zh, rate || base));
 }
 
 function tapEar(zh) {
@@ -1642,11 +1754,8 @@ function qCloze() {
   const w = gm.cur;
   const s = w.ex[Math.floor(Math.random() * w.ex.length)];
   const masked = esc(s).split(esc(w.zh)).join("<u> </u>");
-  const same = GAME_DECK.filter(x => x.zh !== w.zh && x.zh.length === w.zh.length);
-  const wrong = gmShuffle(same.filter(x => x.cat === w.cat))
-    .concat(gmShuffle(same.filter(x => x.cat !== w.cat)))
-    .concat(gmShuffle(GAME_DECK.filter(x => x.zh !== w.zh))).slice(0, 3);
-  const ch = gmShuffle([w].concat(wrong));
+  const ch = gmShuffle([w].concat(
+    gameDecoys(w, GAME_DECK.filter(x => x.zh !== w.zh), Math.max(3, gmChoiceN - 1))));
   document.getElementById("gmBody").innerHTML =
     `<div class="gmsent">${masked}</div>
      <div class="gmpy" id="gmCp"></div>
@@ -1672,6 +1781,7 @@ function tapCloze(zh) {
 function gameResult() {
   if (document.getElementById("gmResult").style.display === "") return;
   gameClock(false);
+  gameFlush();
   gm.locked = true;
   speechSynthesis.cancel();
   document.getElementById("gmPlay").style.display = "none";
@@ -1686,6 +1796,7 @@ function gameResult() {
   if (isBest) { try { localStorage.setItem(key, String(gm.score)); } catch (e) {} }
   const star = isBest ? '<span class="gmbest">🏆 自己ベスト更新！</span>'
     : (rate === 100 && n ? "✨ 全問正解！" : "");
+  gameSaveSession(n, okN);
   document.getElementById("gmResTitle").innerHTML = `${gm.score}点  ${star}`;
   document.getElementById("gmResBody").innerHTML =
     `<div class="sub">正解 ${okN}/${n}（${rate}%）　最大コンボ ${gm.best}` +
@@ -1735,11 +1846,7 @@ function readScroll(el) {
 
 function readSpeak(text) {
   return new Promise(resolve => {
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = "zh-CN";
-    u.rate = readRate;
-    const vs = speechSynthesis.getVoices().filter(v => v.lang.startsWith("zh"));
-    if (vs.length) u.voice = vs.find(v => /Tingting|Ting-Ting|Chinese|中文|普通话/i.test(v.name)) || vs[0];
+    const u = zhUtter(text, readRate);
     u.onend = u.onerror = () => resolve();
     speechSynthesis.speak(u);
   });
@@ -1900,16 +2007,57 @@ const GL_CATS = ["ロボット本体・種別","モーター・駆動","減速�
 let glCat = "", glQ = "", glTimer = null;
 let glGeneral = localStorage.getItem("glGeneral") === "1";
 
-function speakZh(text) {
-  try { playerStop(); } catch (e) {}
-  speechSynthesis.cancel();
+// 中国語の声は1回だけ選んで覚えておく。
+// 声の一覧は非同期に届くので、最初の発声で「声が未設定→途中で切替」が起きると
+// 1音目が乱れる。voiceschanged で先に確定させ、さらに無音の捨て読みを前に挟む。
+let zhVoice = null, speechPrimed = false;
+
+function pickZhVoice() {
+  const vs = speechSynthesis.getVoices().filter(v => (v.lang || "").toLowerCase().startsWith("zh"));
+  if (!vs.length) return null;
+  return vs.find(v => /Tingting|Ting-Ting|Xiaoxiao|Huihui|Chinese|中文|普通话/i.test(v.name)) || vs[0];
+}
+
+function zhUtter(text, rate) {
   const u = new SpeechSynthesisUtterance(text);
   u.lang = "zh-CN";
-  u.rate = parseFloat(document.getElementById("rate").value);
-  const vs = speechSynthesis.getVoices().filter(v => v.lang.startsWith("zh"));
-  if (vs.length) u.voice = vs.find(v => /Tingting|Ting-Ting|Chinese|中文|普通话/i.test(v.name)) || vs[0];
-  speechSynthesis.speak(u);
+  u.rate = rate;
+  if (!zhVoice) zhVoice = pickZhVoice();
+  if (zhVoice) u.voice = zhVoice;
+  return u;
 }
+
+// 本命の前に音量0の短い発声を1つ流す。先頭の途切れ・ノイズはこちらが受ける。
+function zhWarm() {
+  const w = zhUtter("、", 1);
+  w.volume = 0;
+  speechSynthesis.speak(w);
+}
+
+function speakZh(text, warm) {
+  try { playerStop(); } catch (e) {}
+  speechSynthesis.cancel();
+  try { speechSynthesis.resume(); } catch (e) {}
+  if (warm !== false) zhWarm();
+  speechSynthesis.speak(zhUtter(text, parseFloat(document.getElementById("rate").value)));
+}
+
+// 起動時と、最初のタップのときに声を確定させておく
+(function initVoices() {
+  const load = () => { zhVoice = pickZhVoice(); };
+  load();
+  if (typeof speechSynthesis !== "undefined" && "onvoiceschanged" in speechSynthesis) {
+    speechSynthesis.addEventListener("voiceschanged", load);
+  }
+  const prime = () => {
+    if (speechPrimed) return;
+    speechPrimed = true;
+    load();
+    try { zhWarm(); } catch (e) {}          // iOS対策：操作のある文脈で一度鳴らしておく
+    document.removeEventListener("pointerdown", prime);
+  };
+  document.addEventListener("pointerdown", prime, { once: false });
+})();
 
 function glToggleGeneral(on) {
   glGeneral = on;
@@ -2002,6 +2150,175 @@ async function glPoll() {
   } catch (e) { glMsg("状況取得に失敗: " + e.message); }
 }
 
+// ---- プレイ記録（記録 > プレイ） ----
+const MODE_NAME = { fall: "落ちもの", mean: "意味当て", ear: "耳から", build: "合体", cloze: "穴埋め" };
+
+async function renderPlay() {
+  const box = document.getElementById("recordBody");
+  box.textContent = "読み込み中…";
+  let d;
+  try { d = await api("/api/game/history?days=56"); }
+  catch (e) { box.textContent = "読み込めませんでした: " + e.message; return; }
+
+  const goal = d.goal || 30, t = d.today || { asked: 0, correct: 0 };
+  const pct = Math.min(100, Math.round(t.asked / goal * 100));
+  const todayAcc = t.asked ? Math.round(t.correct / t.asked * 100) : null;
+
+  // 今日
+  let h = `<div class="row" style="align-items:center;margin-bottom:2px">
+      <b style="flex:1">今日 ${t.asked}/${goal}問</b>
+      ${todayAcc !== null ? `<span class="sub">正答率 ${todayAcc}%</span>` : ""}
+    </div>
+    <div style="height:10px;background:#eef0f6;border-radius:999px;overflow:hidden">
+      <i style="display:block;height:100%;width:${pct}%;background:${pct >= 100 ? "#2aa84a" : "var(--accent)"}"></i>
+    </div>
+    <div class="sub" style="margin-top:4px">
+      ${pct >= 100 ? "今日のぶんは達成しました" : `あと ${goal - t.asked}問（約${Math.max(1, Math.round((goal - t.asked) * 4 / 60))}分）`}
+      　｜　連続 ${d.streak.current}日（最長 ${d.streak.best}日）　今週 ${d.streak.week}/7日
+    </div>`;
+
+  // 正答率の推移（7日移動平均）＋目標帯
+  const band = d.band || [65, 78];
+  const pts = d.acc7.filter(x => x.acc !== null);
+  if (pts.length >= 2) {
+    // 40〜100%の範囲で描く（70%前後の動きが見えるように）
+    const W = 300, H = 92, y = v => H - (Math.max(0, Math.min(1, (v - 40) / 60))) * H;
+    const step = W / Math.max(1, d.acc7.length - 1);
+    const line = d.acc7.map((x, i) => x.acc === null ? null : `${(i * step).toFixed(1)},${y(x.acc).toFixed(1)}`)
+      .filter(Boolean).join(" ");
+    h += `<h2 style="margin:16px 0 0">正答率の推移</h2>
+      <div class="trend">
+        <div class="band" style="top:${y(band[1])}px;height:${y(band[0]) - y(band[1])}px"></div>
+        <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+          <polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>
+        </svg>
+      </div>
+      <div class="sub">緑の帯が目標（${band[0]}〜${band[1]}%）。帯の中にいれば難易度はちょうどいい状態です。
+        いまの出題は <b>${d.choices}択</b>・新規 <b>${Math.round((d.plan.new_ratio || 0.6) * 100)}%</b>（自動調整）</div>`;
+  }
+
+  // ヒートマップ（8週間）
+  const mx = Math.max(goal, ...d.daily.map(x => x.asked));
+  const lv = v => !v ? "" : v >= goal ? (v >= goal * 2 ? "l4" : "l3") : (v >= goal / 2 ? "l2" : "l1");
+  h += `<h2 style="margin:16px 0 4px">この8週間</h2>
+    <div class="hm">${d.daily.map(x =>
+      `<i class="${lv(x.asked)}" title="${x.date} ${x.asked}問"></i>`).join("")}</div>
+    <div class="sub" style="margin-top:4px">1マス=1日。濃いほど多く解いた日（目標 ${goal}問以上で濃色）</div>`;
+
+  // エリア制覇
+  h += `<h2 style="margin:16px 0 4px">エリア制覇</h2>`;
+  h += d.areas.map(a => `
+    <div class="arow">
+      <span style="width:8.5em;font-size:13px">${esc(a.name)}</span>
+      <span class="abar"><i style="width:${a.pct}%"></i></span>
+      <span class="sub" style="min-width:74px;text-align:right">${a.mastered}/${a.total}</span>
+      <span style="min-width:22px">${a.cleared ? "🏅" : ""}</span>
+    </div>`).join("");
+  h += `<div class="sub">得意が70%を超えるとクリア。語数の少ないエリアから並べています。</div>`;
+
+  // モード別
+  const ms = Object.entries(d.modes || {}).filter(([, m]) => m.asked);
+  if (ms.length) {
+    h += `<h2 style="margin:16px 0 4px">モード別</h2>` + ms.map(([k, m]) =>
+      `<div class="arow"><span style="width:6em;font-size:13px">${esc(MODE_NAME[k] || k)}</span>
+         <span class="abar"><i style="width:${Math.round(m.correct / m.asked * 100)}%"></i></span>
+         <span class="sub" style="min-width:94px;text-align:right">${Math.round(m.correct / m.asked * 100)}%・${m.games}回</span>
+       </div>`).join("");
+  }
+
+  // 直近のゲーム
+  if ((d.sessions || []).length) {
+    h += `<h2 style="margin:16px 0 4px">直近のゲーム</h2>` + d.sessions.map(s => {
+      const a = s.asked ? Math.round(s.correct / s.asked * 100) : 0;
+      return `<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid #f5f5f5;font-size:13px">
+        <span class="sub" style="width:76px">${esc((s.at || "").slice(5, 16))}</span>
+        <span style="flex:1">${esc(MODE_NAME[s.mode] || s.mode)}</span>
+        <span class="sub">${s.asked}問</span>
+        <span style="min-width:40px;text-align:right;color:${a >= 65 && a <= 78 ? "#2aa84a" : "var(--muted)"}">${a}%</span>
+        <span class="sub" style="min-width:48px;text-align:right">${s.score}点</span>
+      </div>`;
+    }).join("");
+  }
+
+  h += `<div class="row" style="margin-top:14px">
+      <span class="sub">1日の目標</span>
+      <select onchange="setGoal(this.value)">
+        ${[20, 30, 40, 60, 90].map(g => `<option value="${g}"${g === goal ? " selected" : ""}>${g}問</option>`).join("")}
+      </select>
+      <button class="small primary" style="margin-left:auto" onclick="showView('game')">▶ 今日のぶんをやる</button>
+    </div>`;
+  box.innerHTML = h;
+}
+
+async function setGoal(g) {
+  try { await api("/api/game/goal", { goal: parseInt(g, 10) }); renderPlay(); }
+  catch (e) { alert(e.message); }
+}
+
+// ---- 単語の習熟度（記録 > 単語） ----
+const BOX_NAME = ["未習", "あやふや", "うろ覚え", "だいたい", "得意", "完璧"];
+
+function missDate(s) {
+  if (!s) return "";
+  const d = new Date(s + "T00:00:00");
+  if (isNaN(d)) return s;
+  const day = Math.floor((new Date().setHours(0, 0, 0, 0) - d) / 86400000);
+  if (day <= 0) return "今日";
+  if (day === 1) return "昨日";
+  if (day < 30) return day + "日前";
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+async function renderWordMiss() {
+  const box = document.getElementById("recordBody");
+  box.textContent = "読み込み中…";
+  let d;
+  try { d = await api("/api/game/stats?limit=60"); }
+  catch (e) { box.textContent = "読み込めませんでした: " + e.message; return; }
+  const c = d.counts || { total: 0, new: 0, learning: 0, mastered: 0, due: 0 };
+  const pct = x => c.total ? (x / c.total * 100).toFixed(1) + "%" : "0%";
+  const bar =
+    `<div style="display:flex;height:14px;border-radius:999px;overflow:hidden;background:#eef0f6;margin:6px 0 4px">
+       <i style="width:${pct(c.mastered)};background:#2aa84a"></i>
+       <i style="width:${pct(c.learning)};background:#f0b429"></i>
+     </div>
+     <div class="sub">得意 <b>${c.mastered}</b>　学習中 <b>${c.learning}</b>　未出題 <b>${c.new}</b>　／ 全${c.total}語</div>
+     <div class="sub" style="margin-top:2px">今日の出題候補 <b>${c.due}</b>語</div>`;
+  const rows = (d.weak || []).map(w => `
+      <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #f0f0f0">
+        <button class="small ghost" onclick="speakZh('${w.zh.replace(/'/g, "")}')">🔊</button>
+        <div style="flex:1;min-width:0">
+          <b style="font-size:17px">${esc(w.zh)}</b>
+          <span class="sub" style="margin-left:6px">${esc(w.py || "")}</span>
+          <div class="sub">${esc(jaShort(w.ja, 22))}</div>
+        </div>
+        <span class="badge" title="取りこぼし">✗${w.ng}</span>
+        <span class="sub" style="min-width:56px;text-align:right">${esc(BOX_NAME[w.box] || "")}</span>
+        <span class="sub" style="min-width:42px;text-align:right">${missDate(w.last)}</span>
+        <button class="small ghost" onclick="masterWord('${w.zh.replace(/'/g, "")}')" title="覚えたので当分出さない">✓</button>
+      </div>`).join("");
+  box.innerHTML =
+    `<b>単語の習熟度</b>${bar}
+     <div class="row" style="margin:12px 0 4px">
+       <b style="flex:1">取りこぼした語 ${d.weak_total || 0}語</b>
+       ${d.weak_total ? `<button class="small primary" onclick="playWeak()">▶ これで遊ぶ</button>` : ""}
+     </div>` +
+    (rows || `<div class="sub">まだありません。ゲームで間違えた語がここに出ます。</div>`) +
+    ((d.weak_total || 0) > (d.weak || []).length
+      ? `<div class="sub" style="margin-top:8px">ほか ${d.weak_total - d.weak.length}語</div>` : "");
+}
+
+async function masterWord(zh) {
+  try { await api("/api/game/master", { zh }); renderWordMiss(); }
+  catch (e) { alert(e.message); }
+}
+
+function playWeak() {
+  gmCat = "weak";
+  localStorage.setItem("gmCat", "weak");
+  showView("game");
+}
+
 // ---- 記録（発音チェックの履歴と苦手） ----
 let recLang = "zh", recTab = "weak";
 
@@ -2014,8 +2331,12 @@ function setRecLang(l) {
 
 function setRecTab(t) {
   recTab = t;
-  document.getElementById("rtab_weak").classList.toggle("active", t === "weak");
-  document.getElementById("rtab_hist").classList.toggle("active", t === "hist");
+  ["weak", "hist", "word", "play"].forEach(x =>
+    document.getElementById("rtab_" + x).classList.toggle("active", t === x));
+  const game = (t === "word" || t === "play");
+  const ls = document.querySelector("#viewRecord .langsel");
+  if (ls) ls.style.display = game ? "none" : "";
+  document.getElementById("rtab_clear").style.display = game ? "none" : "";
   loadRecord();
 }
 
@@ -2031,6 +2352,8 @@ async function clearRecords() {
 
 async function loadRecord() {
   const box = document.getElementById("recordBody");
+  if (recTab === "word") return renderWordMiss();
+  if (recTab === "play") return renderPlay();
   document.getElementById("rlang_en").classList.toggle("active", recLang === "en");
   document.getElementById("rlang_zh").classList.toggle("active", recLang === "zh");
   try {
