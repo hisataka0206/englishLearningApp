@@ -38,8 +38,42 @@
   .langsel { display:flex; gap:8px; margin-bottom:12px; }
   .langsel button { flex:1; padding:12px; font-size:16px; font-weight:700; border:2px solid #d8dce6; background:#fff; color:#555; border-radius:12px; cursor:pointer; }
   .langsel button.active { border-color:var(--accent); background:var(--accent); color:#fff; }
-  .navb { background:rgba(255,255,255,.2); color:#fff; font-size:16px; padding:8px 10px; border-radius:10px; border:0; cursor:pointer; }
+  .navb { background:rgba(255,255,255,.2); color:#fff; font-size:16px; padding:8px 10px; border-radius:10px; border:0; cursor:pointer; white-space:nowrap; flex:0 0 auto; }
   .navb.active { background:#fff; color:var(--accent); }
+  .reading { background:#fff6cc; border-radius:8px; box-shadow:0 0 0 3px #ffd84d; }
+  .gmcard { border:1px solid #e3e6ef; border-radius:14px; padding:12px; margin-bottom:10px; cursor:pointer; background:#fff; }
+  .gmcard:active { background:#f4f6ff; }
+  .gmcard b { font-size:16px; }
+  .gmhead { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .gmbar { flex:1; height:8px; background:#eef0f6; border-radius:999px; overflow:hidden; }
+  .gmbar > i { display:block; height:100%; background:var(--accent); transition:width .25s; }
+  .gmword { font-size:40px; text-align:center; letter-spacing:.08em; margin:14px 0 6px; }
+  .gmword span.done { color:#2aa84a; }
+  .gmword span.ng { color:#d33; }
+  .gmword span.now { text-decoration:underline; text-underline-offset:8px; }
+  .gmpy { text-align:center; color:var(--muted); min-height:22px; letter-spacing:.06em; }
+  .gmja { text-align:center; font-size:20px; margin:16px 0; }
+  .gmsent { font-size:21px; line-height:2; margin:14px 2px; }
+  .gmsent u { text-decoration:none; border-bottom:3px solid var(--accent); padding:0 18px; }
+  .gmchoices { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
+  .gmchoices button { padding:14px 8px; font-size:16px; border-radius:12px; border:1px solid #dfe3ee; background:#fff; }
+  .gmchoices button.ok { background:#e6f8ea; border-color:#2aa84a; }
+  .gmchoices button.ng { background:#fdeaea; border-color:#d33; }
+  .gmtones { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:10px; }
+  .gmtones button { padding:16px 0; font-size:26px; border-radius:12px; border:1px solid #dfe3ee; background:#fff; }
+  .gmtiles { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:10px; }
+  .gmtiles button { width:58px; height:58px; font-size:28px; border-radius:12px; border:1px solid #dfe3ee; background:#fff; }
+  .gmtiles button:disabled { opacity:.25; }
+  .gmslot { text-align:center; font-size:34px; min-height:46px; letter-spacing:.1em; }
+  .gmfb { text-align:center; font-size:15px; min-height:24px; margin-top:8px; }
+  .gmfb.ok { color:#2aa84a; } .gmfb.ng { color:#d33; }
+  .gmcombo { font-weight:700; color:#f08c00; }
+  #readBar { position:fixed; left:50%; transform:translateX(-50%); bottom:70px; z-index:40;
+    background:#fff; border:1px solid var(--accent); border-radius:999px;
+    box-shadow:0 4px 14px rgba(0,0,0,.18); padding:6px 8px; gap:6px; align-items:center; }
+  #readBar select { font-size:13px; padding:4px 6px; border-radius:8px; border:1px solid #ddd; background:#fff; }
+  #readBar button { white-space:nowrap; flex:0 0 auto; }
+  #readBar .sub { white-space:nowrap; }
   .artrow { padding:10px 4px; border-bottom:1px solid #f0f1f5; cursor:pointer; }
   .artrow:hover { background:#f8faff; }
   .artrow.studied { background:#eceef3; color:#666; }
@@ -106,12 +140,13 @@
 </head>
 <body>
 <header>English Learning <span id="ver" style="font-size:11px;font-weight:400;opacity:.8"></span>
-  <div style="display:flex;align-items:center;gap:8px">
+  <div style="display:flex;align-items:center;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%">
     <div id="status">…</div>
     <button class="navb" id="nav_main" onclick="showView('main')">✍️ 自分の文</button>
     <button class="navb" id="nav_articles" onclick="showView('articles')">📰 記事</button>
     <button class="navb" id="nav_dialog" onclick="showView('dialog')">💬 会話</button>
     <button class="navb" id="nav_gloss" onclick="showView('gloss')">📚 用語</button>
+    <button class="navb" id="nav_game" onclick="showView('game')">🎮 ゲーム</button>
     <button class="navb" id="nav_record" onclick="showView('record')">📊 記録</button>
     <button class="navb" onclick="location.reload()">⟳</button>
   </div>
@@ -250,6 +285,49 @@
   </div>
 </div>
 
+<div id="viewGame" style="display:none">
+  <div class="card" id="gmMenu">
+    <h2>単語ゲーム <span class="sub" id="gmDeckInfo"></span></h2>
+    <div class="gmcard" onclick="gameStart('tone')">
+      <b>🎯 声調アタック</b>
+      <div class="sub">漢字を見て、1音節ずつ声調を当てる</div>
+    </div>
+    <div class="gmcard" onclick="gameStart('ear')">
+      <b>👂 耳から意味当て</b>
+      <div class="sub">音だけ聞いて意味を選ぶ。漢字は答えた後に出る</div>
+    </div>
+    <div class="gmcard" onclick="gameStart('build')">
+      <b>🧩 合体パズル</b>
+      <div class="sub">意味を見て、散らばった漢字から語を組み立てる</div>
+    </div>
+    <div class="gmcard" onclick="gameStart('cloze')">
+      <b>📰 記事で穴埋め</b>
+      <div class="sub">実際の記事の文の空欄に入る語を選ぶ</div>
+    </div>
+    <div class="sub" id="gmWeak" style="margin-top:6px"></div>
+  </div>
+
+  <div class="card" id="gmPlay" style="display:none">
+    <div class="gmhead">
+      <button class="small ghost" onclick="gameQuit()">✕</button>
+      <div class="gmbar"><i id="gmProg" style="width:0%"></i></div>
+      <span class="sub" id="gmCount">0/10</span>
+      <span class="sub" id="gmScore">0</span>
+    </div>
+    <div id="gmBody"></div>
+    <div class="gmfb" id="gmFb"></div>
+  </div>
+
+  <div class="card" id="gmResult" style="display:none">
+    <h2 id="gmResTitle">結果</h2>
+    <div id="gmResBody"></div>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" onclick="gameStart(gm.mode)">もう一度</button>
+      <button class="ghost" onclick="gameMenu()">他のゲーム</button>
+    </div>
+  </div>
+</div>
+
 <div id="viewRecord" style="display:none">
   <div class="langsel">
     <button id="rlang_en" onclick="setRecLang('en')">🇺🇸 英語</button>
@@ -262,6 +340,22 @@
   </div>
   <div class="card"><div id="recordBody">読み込み中…</div></div>
 </div>
+<!-- 通し読みバー（記事・会話・用語で共用） -->
+<div id="readBar" style="display:none">
+  <button class="small primary" id="btnReadAll" onclick="readToggle()">▶ 通し読み</button>
+  <button class="small ghost" id="btnReadStop" onclick="readStop()" title="最初から">⏹</button>
+  <select id="readRate" onchange="readRateChanged(this.value)" title="速度">
+    <option value="0.5">0.5x</option>
+    <option value="0.75">0.75x</option>
+    <option value="1" selected>1.0x</option>
+    <option value="1.25">1.25x</option>
+    <option value="1.5">1.5x</option>
+  </select>
+  <button class="small tab" id="btnReadLoop" onclick="readLoopToggle()" title="繰り返し">🔁</button>
+  <button class="small ghost" id="btnReadDl" onclick="readDownload()" title="音声をダウンロード">⬇️</button>
+  <span class="sub" id="readPos"></span>
+</div>
+
 <!-- ミス種類ポップアップ（記事・会話で共用）。拼音の手直し欄つき -->
 <div id="failPop" style="display:none;position:fixed;z-index:30;background:#fff;border:1px solid var(--accent);border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.2);padding:8px">
   <div id="failPopChar" style="font-weight:700;text-align:center;margin-bottom:4px"></div>
@@ -958,19 +1052,486 @@ async function delSentence(id) {
 let view = "main";
 
 function showView(v) {
+  readStop();
   view = v;
   document.getElementById("viewMain").style.display = v === "main" ? "" : "none";
   document.getElementById("viewArticles").style.display = v === "articles" ? "" : "none";
   document.getElementById("viewDialog").style.display = v === "dialog" ? "" : "none";
   document.getElementById("viewGloss").style.display = v === "gloss" ? "" : "none";
+  document.getElementById("viewGame").style.display = v === "game" ? "" : "none";
   document.getElementById("viewRecord").style.display = v === "record" ? "" : "none";
-  ["main","articles","dialog","gloss","record"].forEach(x =>
+  ["main","articles","dialog","gloss","game","record"].forEach(x =>
     document.getElementById("nav_" + x).classList.toggle("active", x === v));
   if (v === "articles") loadArticles();
   if (v === "dialog") loadDialogs();
   if (v === "gloss") loadGloss();
+  if (v === "game") gameMenu();
   if (v === "record") { recLang = lang; loadRecord(); }
   window.scrollTo(0, 0);
+}
+
+// ---- 単語ゲーム ----------------------------------------------------------
+// いまはお試し用のデッキ（24語）を直書きしている。GAME_DECK を
+// /api/glossary の結果に差し替えれば、そのまま単語帳全体で遊べる形にしてある。
+const GAME_DECK = [{"zh":"供应链","py":[["gong",1],["ying",4],["lian",4]],"ja":"サプライチェーン","cat":"サプライチェーン","freq":9,"ex":["6月22日，第四届中国国际供应链促进博览会（链博会）在北京正式开幕。","中国之所以在价格上压倒性获胜，根本原因是它掌握了整条供应链。"]},{"zh":"关节","py":[["guan",1],["jie",2]],"ja":"関節","cat":"減速・伝動・機構","freq":9,"ex":["空心杯电机结构紧凑、无齿槽效应，适合高动态响应的指关节。","目前已有八家上市公司切入人形机器人关节用无框力矩电机领域。"]},{"zh":"减速比","py":[["jian",3],["su",4],["bi",3]],"ja":"減速比","cat":"減速・伝動・機構","freq":9,"ex":["高减速比还会放大反射惯量与反射摩擦，使力透明性下降、反驱动性能变弱。","减速比不仅放大力矩，还会把电机转子惯量按减速比的平方折算到输出端。"]},{"zh":"精度","py":[["jing",1],["du",4]],"ja":"精度","cat":"センサー・知覚","freq":8,"ex":["在量产过程中，“小赛”承担高精度、高重复、高精细的作业。","智元还在上汽通用超级工厂的电池产线实现±0.1毫米高精度定位作业。"]},{"zh":"传动","py":[["chuan",2],["dong",4]],"ja":"駆動","cat":"減速・伝動・機構","freq":7,"ex":["关节的旋转运动多采用谐波减速器，其制造基础是谐波传动。","在这个基础上，减速器的传动特性进一步放大了没有抱闸的缺陷。"]},{"zh":"减速器","py":[["jian",3],["su",4],["qi",4]],"ja":"減速機・ギヤボックス","cat":"減速・伝動・機構","freq":7,"ex":["关节的旋转运动多采用谐波减速器，其制造基础是谐波传动。","通常一台谐波减速器会使用一个交叉滚子轴承和一个柔性轴承。"]},{"zh":"壳体","py":[["ke",2],["ti",3]],"ja":"ハウジング","cat":"材料・構造・熱","freq":7,"ex":["两级内齿圈加工在同一个铝制壳体上，太阳轮、行星架与行星轮沿轴向堆叠。","结论先行：壳体用铝没有争议，轴系用钢是行业共识。"]},{"zh":"控制","py":[["kong",4],["zhi",4]],"ja":"制御","cat":"AI・制御","freq":7,"ex":["它把全身控制重新定义为连续的序列预测问题。","全身控制是人形机器人从“能站”到“能动”的关键环节，长期是行业难点。"]},{"zh":"数据","py":[["shu",4],["ju",4]],"ja":"データ","cat":"AI・制御","freq":7,"ex":["在训练数据上，模型混合了真实机器人轨迹、人类视频和合成数据。","这种异质混合有效缓解了机器人数据稀缺的难题，使泛化能力更强。"]},{"zh":"扭矩","py":[["niu",3],["ju",3]],"ja":"トルク","cat":"モーター・駆動","freq":6,"ex":["由于电机高转速、低扭矩，关节必须依靠减速器实现低速稳定的大扭矩输出。","螺丝扭矩值、关节模组标定数据和整机运动曲线都与唯一的产品序列号绑定。"]},{"zh":"零部件","py":[["ling",2],["bu",4],["jian",4]],"ja":"部品・構成部品","cat":"サプライチェーン","freq":6,"ex":["宁波，这座以模具和小家电制造闻名的城市，如今成了机器人零部件的重镇。","这意味着，人形机器人正在形成从整机、零部件到系统集成的完整产业链条。"]},{"zh":"供应商","py":[["gong",1],["ying",4],["shang",1]],"ja":"サプライヤー","cat":"サプライチェーン","freq":5,"ex":["客户不需要再去协调多家供应商，就能实现“交钥匙”式生产。","目前各家供应商正在推进产线排产，为规模化生产做准备。"]},{"zh":"执行器","py":[["zhi",2],["xing",2],["qi",4]],"ja":"アクチュエーター","cat":"モーター・駆動","freq":5,"ex":["按传动部件与电机的结合方式，关节执行器可分为柔性、弹性和准直驱三类。","舍弗勒已承诺采购数千台 NEURA 机器人，并供应高扭矩执行器。"]},{"zh":"效率","py":[["xiao",4],["lv",4]],"ja":"効率","cat":"一般","freq":5,"ex":["第四个好处是性能优化，内部零部件经过深度匹配之后，传动效率明显提高。","内部零件深度匹配，传动效率随之提升。"]},{"zh":"整机","py":[["zheng",3],["ji",1]],"ja":"完成機（本体まるごと）","cat":"ロボット本体・種別","freq":5,"ex":["这意味着，人形机器人正在形成从整机、零部件到系统集成的完整产业链条。","这意味着安全方案与整机厂商的深度绑定，正在成为行业新的竞争维度。"]},{"zh":"转速","py":[["zhuan",4],["su",4]],"ja":"回転数","cat":"モーター・駆動","freq":5,"ex":["由于电机高转速、低扭矩，关节必须依靠减速器实现低速稳定的大扭矩输出。","它的作用是化解电机\"高转速低扭矩\"与关节\"低转速高扭矩\"之间的矛盾。"]},{"zh":"运动","py":[["yun",4],["dong",4]],"ja":"運動","cat":"AI・制御","freq":5,"ex":["关节的旋转运动多采用谐波减速器，其制造基础是谐波传动。","这一发布被视为人形机器人“运动大脑”走向通用化的重要一步。"]},{"zh":"集成","py":[["ji",2],["cheng",2]],"ja":"集積・統合","cat":"一般","freq":5,"ex":["这意味着，人形机器人正在形成从整机、零部件到系统集成的完整产业链条。","人形机器人的关节模组正在从\"零件堆叠\"走向\"一体化集成设计\"。"]},{"zh":"关键","py":[["guan",1],["jian",4]],"ja":"カギとなる","cat":"一般","freq":4,"ex":["全身控制是人形机器人从“能站”到“能动”的关键环节，长期是行业难点。","报告把2026年称为从“试点”走向“平台”的关键一年。"]},{"zh":"准直驱","py":[["zhun",3],["zhi",2],["qu",1]],"ja":"準ダイレクトドライブ","cat":"モーター・駆動","freq":4,"ex":["近年来，准直驱关节技术成为平衡高性能与实用化需求的重要工程路径。","按传动部件与电机的结合方式，关节执行器可分为柔性、弹性和准直驱三类。"]},{"zh":"力控","py":[["li",4],["kong",4]],"ja":"力制御","cat":"AI・制御","freq":4,"ex":["智元远征A1全身采用统一的八比一架构，实现一毫秒周期的无传感器力控。","不过其刚度通常低于一万牛米每弧度，输出阻抗低，力控带宽因此受限。"]},{"zh":"状态","py":[["zhuang",4],["tai",4]],"ja":"状態","cat":"一般","freq":4,"ex":["这与三年前\"整机企业自研一切\"的状态形成了鲜明的对比。","第二步是运动规划，六轴机械臂的状态是六维关节空间里的一个点。"]},{"zh":"装配","py":[["zhuang",1],["pei",4]],"ja":"組み付け・アセンブリ","cat":"製造・量産","freq":4,"ex":["它常用于焊接、装配、搬运、喷涂、打磨和码垆等重复性生产作业。","即插即用的结构还能大幅缩短整机的装配时间。"]},{"zh":"轻量化","py":[["qing",1],["liang",4],["hua",4]],"ja":"軽量化","cat":"材料・構造・熱","freq":4,"ex":["同级机型普遍超过六十公斤，她因此轻量化了百分之二十以上。","高级则要求方案优化、应力分析与轻量化设计，并综合优化加工和装配工艺。"]}];
+
+const TONE_MARKS = { a:"āáǎà", e:"ēéěè", i:"īíǐì", o:"ōóǒò", u:"ūúǔù", "ü":"ǖǘǚǜ" };
+const TONE_LABEL = ["ˉ", "ˊ", "ˇ", "ˋ"];
+
+function pyOne(syl, tone) {
+  let s = (syl || "").replace(/v/g, "ü");
+  if (!(tone >= 1 && tone <= 4)) return s;
+  let tgt = null, idx = -1;
+  if (s.includes("a")) { tgt = "a"; idx = s.indexOf("a"); }
+  else if (s.includes("o")) { tgt = "o"; idx = s.indexOf("o"); }
+  else if (s.includes("e")) { tgt = "e"; idx = s.indexOf("e"); }
+  else if (s.includes("iu")) { tgt = "u"; idx = s.indexOf("iu") + 1; }
+  else if (s.includes("ui")) { tgt = "i"; idx = s.indexOf("ui") + 1; }
+  else {
+    for (let i = s.length - 1; i >= 0; i--) if ("iuü".includes(s[i])) { tgt = s[i]; idx = i; break; }
+  }
+  if (!tgt) return s;
+  return s.slice(0, idx) + TONE_MARKS[tgt][tone - 1] + s.slice(idx + 1);
+}
+
+function pyFull(w) { return w.py.map(p => pyOne(p[0], p[1])).join(" "); }
+
+function gmShuffle(a) {
+  const x = a.slice();
+  for (let i = x.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [x[i], x[j]] = [x[j], x[i]]; }
+  return x;
+}
+
+let gm = { mode: null, q: 0, total: 10, score: 0, combo: 0, best: 0, items: [], cur: null, miss: [], locked: false, step: 0, built: "" };
+
+function gameMenu() {
+  gm.mode = null;
+  speechSynthesis.cancel();
+  document.getElementById("gmMenu").style.display = "";
+  document.getElementById("gmPlay").style.display = "none";
+  document.getElementById("gmResult").style.display = "none";
+  document.getElementById("gmDeckInfo").textContent = `お試し${GAME_DECK.length}語`;
+  const w = gameWeak();
+  document.getElementById("gmWeak").textContent =
+    w.length ? `苦手リスト: ${w.slice(0, 8).map(x => x.zh).join("・")}${w.length > 8 ? " ほか" : ""}（${w.length}語）` : "";
+}
+
+function gameWeak() {
+  try { return JSON.parse(localStorage.getItem("gameMiss") || "[]"); } catch (e) { return []; }
+}
+
+function gameSaveMiss(w) {
+  const list = gameWeak();
+  const hit = list.find(x => x.zh === w.zh);
+  if (hit) { hit.n = (hit.n || 1) + 1; hit.at = Date.now(); }
+  else list.push({ zh: w.zh, ja: w.ja, n: 1, at: Date.now() });
+  try { localStorage.setItem("gameMiss", JSON.stringify(list.slice(-200))); } catch (e) {}
+}
+
+function gameQuit() { gameMenu(); }
+
+function gameStart(mode) {
+  let pool = GAME_DECK.slice();
+  if (mode === "cloze") pool = pool.filter(w => (w.ex || []).length);
+  if (mode === "build") pool = pool.filter(w => w.zh.length >= 2);
+  // 苦手な語を優先的に混ぜる
+  const weak = gameWeak().map(x => x.zh);
+  const w1 = gmShuffle(pool.filter(w => weak.includes(w.zh)));
+  const w2 = gmShuffle(pool.filter(w => !weak.includes(w.zh)));
+  gm = { mode, q: 0, total: Math.min(10, pool.length), score: 0, combo: 0, best: 0,
+         items: w1.concat(w2).slice(0, Math.min(10, pool.length)),
+         cur: null, miss: [], locked: false, step: 0, built: "" };
+  document.getElementById("gmMenu").style.display = "none";
+  document.getElementById("gmResult").style.display = "none";
+  document.getElementById("gmPlay").style.display = "";
+  gameNext();
+}
+
+function gameHead() {
+  document.getElementById("gmCount").textContent = `${Math.min(gm.q + 1, gm.total)}/${gm.total}`;
+  document.getElementById("gmProg").style.width = (gm.q / gm.total * 100) + "%";
+  document.getElementById("gmScore").innerHTML =
+    gm.score + (gm.combo >= 2 ? ` <span class="gmcombo">${gm.combo}連続</span>` : "");
+}
+
+function gameNext() {
+  if (gm.q >= gm.total) return gameResult();
+  gm.cur = gm.items[gm.q];
+  gm.locked = false; gm.step = 0; gm.built = "";
+  document.getElementById("gmFb").textContent = "";
+  document.getElementById("gmFb").className = "gmfb";
+  gameHead();
+  ({ tone: qTone, ear: qEar, build: qBuild, cloze: qCloze })[gm.mode]();
+}
+
+function gameScore(ok, w) {
+  if (ok) {
+    gm.combo++; gm.best = Math.max(gm.best, gm.combo);
+    gm.score += 10 + Math.max(0, (gm.combo - 1) * 2);
+  } else {
+    gm.combo = 0; gm.miss.push(w); gameSaveMiss(w);
+  }
+  gameHead();
+}
+
+function gameFb(ok, text) {
+  const fb = document.getElementById("gmFb");
+  fb.className = "gmfb " + (ok ? "ok" : "ng");
+  fb.textContent = text;
+}
+
+function gameAdvance(ms) {
+  gm.locked = true;
+  setTimeout(() => { gm.q++; gameNext(); }, ms || 1100);
+}
+
+// --- A 声調アタック ---
+function qTone() {
+  const w = gm.cur;
+  const body = document.getElementById("gmBody");
+  body.innerHTML =
+    `<div class="gmword" id="gmTw">${w.zh.split("").map((c, i) =>
+      `<span id="gmTc${i}" class="${i === 0 ? "now" : ""}">${esc(c)}</span>`).join("")}</div>` +
+    `<div class="gmpy" id="gmTp">${w.py.map(p => esc(p[0])).join(" ")}</div>` +
+    `<div class="gmtones">${TONE_LABEL.map((t, i) =>
+      `<button onclick="tapTone(${i + 1})">${t}<div class="sub">${i + 1}声</div></button>`).join("")}</div>`;
+}
+
+function tapTone(t) {
+  if (gm.locked) return;
+  const w = gm.cur, i = gm.step, right = w.py[i][1];
+  const cell = document.getElementById("gmTc" + i);
+  cell.classList.remove("now");
+  cell.classList.add(t === right ? "done" : "ng");
+  const next = i + 1;
+  if (t !== right || next >= w.py.length) {   // 1つでも外したらその語は終わり
+    const ok = (t === right);
+    document.getElementById("gmTp").textContent = pyFull(w) + "  " + w.ja;
+    gameScore(ok, w);
+    gameFb(ok, ok ? "正解！" : `${pyFull(w)}（${w.ja}）`);
+    speakZh(w.zh);
+    return gameAdvance(ok ? 900 : 1600);
+  }
+  gm.step = next;
+  const nx = document.getElementById("gmTc" + next);
+  if (nx) nx.classList.add("now");
+}
+
+// --- B 耳から意味当て ---
+function qEar() {
+  const w = gm.cur;
+  const wrong = gmShuffle(GAME_DECK.filter(x => x.zh !== w.zh && x.ja !== w.ja)).slice(0, 3);
+  const ch = gmShuffle([w].concat(wrong));
+  document.getElementById("gmBody").innerHTML =
+    `<div style="text-align:center;margin:18px 0 6px">
+       <button class="primary" style="font-size:30px;padding:16px 26px;border-radius:50%" onclick="speakZh('${w.zh}')">🔊</button>
+     </div>
+     <div class="gmpy" id="gmEp">？</div>
+     <div class="gmchoices">${ch.map(c =>
+       `<button onclick="tapEar('${c.zh}')">${esc(c.ja)}</button>`).join("")}</div>`;
+  setTimeout(() => speakZh(w.zh), 250);
+}
+
+function tapEar(zh) {
+  if (gm.locked) return;
+  const w = gm.cur, ok = zh === w.zh;
+  const btns = document.querySelectorAll("#gmBody .gmchoices button");
+  btns.forEach(b => {
+    if (b.textContent === w.ja) b.classList.add("ok");
+    else if (b.getAttribute("onclick").includes("'" + zh + "'")) b.classList.add("ng");
+  });
+  document.getElementById("gmEp").textContent = `${w.zh}  ${pyFull(w)}`;
+  gameScore(ok, w);
+  gameFb(ok, ok ? "正解！" : `${w.zh}  ${pyFull(w)}  ${w.ja}`);
+  gameAdvance(ok ? 1100 : 1700);
+}
+
+// --- C 合体パズル ---
+function qBuild() {
+  const w = gm.cur;
+  const pool = w.zh.split("");
+  const others = GAME_DECK.filter(x => x.zh !== w.zh).map(x => x.zh).join("").split("");
+  const decoy = gmShuffle(others.filter(c => !pool.includes(c))).slice(0, Math.min(3, 7 - pool.length));
+  const tiles = gmShuffle(pool.concat(decoy));
+  document.getElementById("gmBody").innerHTML =
+    `<div class="gmja">${esc(w.ja)}</div>
+     <div class="gmslot" id="gmSlot">${"_ ".repeat(w.zh.length)}</div>
+     <div class="gmpy" id="gmBp">${w.zh.length}文字</div>
+     <div class="gmtiles" id="gmTiles">${tiles.map((c, i) =>
+       `<button id="gmTi${i}" onclick="tapTile(${i},'${c}')">${esc(c)}</button>`).join("")}</div>
+     <div class="row" style="justify-content:center;margin-top:10px">
+       <button class="small ghost" onclick="undoTile()">⌫ 戻す</button></div>`;
+}
+
+function tapTile(i, c) {
+  if (gm.locked) return;
+  const w = gm.cur;
+  if (gm.built.length >= w.zh.length) return;
+  gm.built += c;
+  const b = document.getElementById("gmTi" + i);
+  if (b) { b.disabled = true; b.dataset.used = "1"; }
+  document.getElementById("gmSlot").textContent = gm.built + " _".repeat(Math.max(0, w.zh.length - gm.built.length));
+  if (gm.built.length === w.zh.length) {
+    const ok = gm.built === w.zh;
+    gameScore(ok, w);
+    document.getElementById("gmBp").textContent = `${w.zh}  ${pyFull(w)}`;
+    gameFb(ok, ok ? "正解！" : `正解は ${w.zh}（${pyFull(w)}）`);
+    speakZh(w.zh);
+    gameAdvance(ok ? 1100 : 1800);
+  }
+}
+
+function undoTile() {
+  if (gm.locked || !gm.built) return;
+  const c = gm.built.slice(-1);
+  gm.built = gm.built.slice(0, -1);
+  const b = Array.from(document.querySelectorAll("#gmTiles button"))
+    .reverse().find(x => x.disabled && x.textContent === c);
+  if (b) b.disabled = false;
+  document.getElementById("gmSlot").textContent =
+    gm.built + " _".repeat(Math.max(0, gm.cur.zh.length - gm.built.length));
+}
+
+// --- E 記事で穴埋め ---
+function qCloze() {
+  const w = gm.cur;
+  const s = w.ex[Math.floor(Math.random() * w.ex.length)];
+  const masked = esc(s).split(esc(w.zh)).join("<u> </u>");
+  const wrong = gmShuffle(GAME_DECK.filter(x => x.zh !== w.zh && x.zh.length === w.zh.length)).slice(0, 3);
+  const ch = gmShuffle([w].concat(wrong.length >= 3 ? wrong :
+    wrong.concat(gmShuffle(GAME_DECK.filter(x => x.zh !== w.zh)).slice(0, 3 - wrong.length))));
+  document.getElementById("gmBody").innerHTML =
+    `<div class="gmsent">${masked}</div>
+     <div class="gmpy" id="gmCp"></div>
+     <div class="gmchoices">${ch.map(c =>
+       `<button onclick="tapCloze('${c.zh}')">${esc(c.zh)}</button>`).join("")}</div>`;
+}
+
+function tapCloze(zh) {
+  if (gm.locked) return;
+  const w = gm.cur, ok = zh === w.zh;
+  document.querySelectorAll("#gmBody .gmchoices button").forEach(b => {
+    if (b.textContent === w.zh) b.classList.add("ok");
+    else if (b.textContent === zh) b.classList.add("ng");
+  });
+  document.getElementById("gmCp").textContent = `${pyFull(w)}  ${w.ja}`;
+  document.querySelectorAll("#gmBody .gmsent u").forEach(u => u.textContent = w.zh);
+  gameScore(ok, w);
+  gameFb(ok, ok ? "正解！" : `${w.zh}  ${w.ja}`);
+  gameAdvance(ok ? 1100 : 1800);
+}
+
+// --- 結果 ---
+function gameResult() {
+  document.getElementById("gmProg").style.width = "100%";
+  document.getElementById("gmPlay").style.display = "none";
+  const r = document.getElementById("gmResult");
+  r.style.display = "";
+  const okN = gm.total - gm.miss.length;
+  const star = okN === gm.total ? "🏆 全問正解！" : okN >= gm.total * 0.8 ? "✨ good!" : "";
+  document.getElementById("gmResTitle").textContent = `${gm.score}点  ${star}`;
+  document.getElementById("gmResBody").innerHTML =
+    `<div class="sub">正解 ${okN}/${gm.total}　最大コンボ ${gm.best}</div>` +
+    (gm.miss.length ? `<h2 style="margin-top:12px">復習</h2>` + gm.miss.map(w =>
+      `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f0f0f0">
+         <button class="small ghost" onclick="speakZh('${w.zh}')">🔊</button>
+         <div><b style="font-size:18px">${esc(w.zh)}</b>
+           <span class="sub" style="margin-left:6px">${esc(pyFull(w))}</span>
+           <div class="sub">${esc(w.ja)}</div></div>
+       </div>`).join("") : `<div style="margin-top:8px">間違いなし。次は速度を上げてみましょう。</div>`);
+}
+
+// ---- 通し読み（表示中の中国語を上から順に読み上げる） ----
+// 対象は「拼音が振ってある中国語のかたまり」。記事＝本文と重要語彙、
+// 会話＝各ターンと語彙、用語＝一覧の各行。伏せ字中のターンは読まない。
+// 一時停止はブラウザ依存のpause()を使わず、位置を覚えて止める方式。
+// （iOSのpause()は復帰しないことがあるため。再開はその行の頭から）
+const READ_SEL = {
+  articles: "#artSentences .cgrid, #artVocab .cgrid",
+  dialog: "#dlgTurns .cgrid, #dlgVocab .cgrid",
+  gloss: "#glList [data-zh]",
+};
+let reading = false, readPaused = false, readGen = 0, readIdx = 0;
+let readLoop = localStorage.getItem("readLoop") === "1";
+let readRate = parseFloat(localStorage.getItem("readRate") || "1") || 1;
+
+function readTargets() {
+  const sel = READ_SEL[view];
+  if (!sel) return [];
+  return Array.from(document.querySelectorAll(sel))
+    .filter(el => !el.classList.contains("masked") && readText(el));
+}
+
+function readText(el) {
+  if (el.dataset.zh) return el.dataset.zh;
+  return Array.from(el.querySelectorAll(".cchar"))
+    .map(c => c.dataset.ch || "").join("").trim();
+}
+
+// 読んでいる行を画面の上から25%の位置へ
+function readScroll(el) {
+  const y = window.scrollY + el.getBoundingClientRect().top - window.innerHeight * 0.25;
+  window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+}
+
+function readSpeak(text) {
+  return new Promise(resolve => {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "zh-CN";
+    u.rate = readRate;
+    const vs = speechSynthesis.getVoices().filter(v => v.lang.startsWith("zh"));
+    if (vs.length) u.voice = vs.find(v => /Tingting|Ting-Ting|Chinese|中文|普通话/i.test(v.name)) || vs[0];
+    u.onend = u.onerror = () => resolve();
+    speechSynthesis.speak(u);
+  });
+}
+
+function readWait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function readMark(el) {
+  document.querySelectorAll(".reading").forEach(e => e.classList.remove("reading"));
+  if (el) el.classList.add("reading");
+}
+
+function readBtnSync(n) {
+  const b = document.getElementById("btnReadAll");
+  if (b) b.textContent = reading ? "⏸ 一時停止" : (readPaused ? "▶ 続きから" : "▶ 通し読み");
+  const st = document.getElementById("btnReadStop");
+  if (st) st.style.display = (reading || readPaused) ? "" : "none";
+  const p = document.getElementById("readPos");
+  if (p && n !== undefined) p.textContent = n;
+}
+
+function readRateChanged(v) {
+  readRate = parseFloat(v) || 1;
+  localStorage.setItem("readRate", String(readRate));
+  // 再生中なら、今読んでいる行から新しい速度で読み直す
+  if (reading) { readPause(); readStart(); }
+}
+
+function readLoopToggle() {
+  readLoop = !readLoop;
+  localStorage.setItem("readLoop", readLoop ? "1" : "0");
+  document.getElementById("btnReadLoop").classList.toggle("active", readLoop);
+}
+
+// 一時停止：位置（readIdx）は残す。再開するとその行の頭から
+function readPause() {
+  readGen++;
+  reading = false;
+  readPaused = true;
+  speechSynthesis.cancel();
+  readBtnSync();
+}
+
+// 停止：先頭に戻す
+function readStop() {
+  readGen++;
+  reading = false;
+  readPaused = false;
+  readIdx = 0;
+  speechSynthesis.cancel();
+  readMark(null);
+  readBtnSync("");
+}
+
+function readToggle() {
+  if (reading) { readPause(); return; }
+  readStart();
+}
+
+async function readStart() {
+  const list0 = readTargets();
+  if (!list0.length) return;
+  try { playerStop(); } catch (e) {}
+  speechSynthesis.cancel();
+  reading = true;
+  readPaused = false;
+  const gen = ++readGen;
+  readBtnSync();
+  do {
+    const list = readTargets();   // ループ2周目以降も最新のDOMを見る
+    if (!list.length) break;
+    if (readIdx >= list.length) readIdx = 0;
+    for (; readIdx < list.length; readIdx++) {
+      if (gen !== readGen) return;
+      const el = list[readIdx];
+      readMark(el);
+      readScroll(el);
+      readBtnSync(`${readIdx + 1}/${list.length}`);
+      await readSpeak(readText(el));
+      if (gen !== readGen) return;
+      await readWait(180);
+      if (gen !== readGen) return;
+    }
+    readIdx = 0;
+    if (readLoop) await readWait(700);
+  } while (readLoop && gen === readGen);
+  if (gen === readGen) readStop();
+}
+
+// 読み上げ対象がある画面でだけバーを出す（どの経路で描画されても追従できるよう定期確認）
+function readBarSync() {
+  const bar = document.getElementById("readBar");
+  if (!bar) return;
+  const show = !!READ_SEL[view] && readTargets().length > 0;
+  bar.style.display = show ? "flex" : "none";
+  document.getElementById("btnReadLoop").classList.toggle("active", readLoop);
+  if (!show && (reading || readPaused)) readStop();
+}
+setInterval(readBarSync, 800);
+
+(function initReadRate() {
+  const s = document.getElementById("readRate");
+  if (s) s.value = String(readRate);
+  readBtnSync("");
+})();
+
+// 通し読みの音声をMP3で落とす（Azureの音声合成を使うのでネット接続が要る）
+function readName() {
+  const id = (typeof curArticle === "object" && curArticle ? curArticle.id || "" : "")
+    .replace(/[^A-Za-z0-9_-]/g, "");
+  if (view === "articles") return "article_" + id.slice(0, 12);
+  if (view === "dialog") return "dialog_" + id.slice(0, 20);
+  const i = GL_CATS.indexOf(glCat);
+  return "glossary" + (i >= 0 ? "_cat" + (i + 1) : "");
+}
+
+async function readDownload() {
+  const lines = readTargets().map(readText).filter(Boolean);
+  if (!lines.length) return;
+  const btn = document.getElementById("btnReadDl");
+  btn.disabled = true;
+  btn.textContent = "⏳";
+  try {
+    const r = await fetch("/api/tts", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lines, lang: "zh", name: readName(), rate: readRate }),
+    });
+    if (!r.ok) {
+      let msg = "HTTP " + r.status;
+      try { msg = (await r.json()).error || msg; } catch (e) {}
+      throw new Error(msg);
+    }
+    const cd = r.headers.get("Content-Disposition") || "";
+    const m = cd.match(/filename="([^"]+)"/);
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = m ? m[1] : "read.mp3";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 15000);
+  } catch (e) {
+    alert("音声ファイルを作れませんでした: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "⬇️";
+  }
 }
 
 // ---- 専門用語集（分類別／Notionと同期） ----
@@ -1031,7 +1592,7 @@ function renderGloss(d) {
   document.getElementById("glCount").textContent =
     `${d.matched}件 / 全${d.total}件` + (d.items.length < d.matched ? `（上位${d.items.length}件）` : "");
   document.getElementById("glList").innerHTML = d.items.length ? d.items.map(it => `
-    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f0f0f0">
+    <div data-zh="${esc(it.zh)}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f0f0f0">
       <div style="flex:1;min-width:0">
         <div onclick="speakZh('${it.zh.replace(/'/g, "")}')" style="cursor:pointer">
           <b style="font-size:17px">${esc(it.zh)}</b>

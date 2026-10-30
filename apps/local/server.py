@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.40.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.41.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -667,8 +667,8 @@ def glossary_pull():
         added = updated = 0
         for p in pages:
             zh = NOTION.prop_text(p, "Word").strip()
-            if not zh:
-                continue
+            if not zh or not re.search(r"[\u4e00-\u9fff]", zh):
+                continue  # アルファベット・数字だけの見出し（VLA, SLAM, 1.1 など）は取り込まない
             ja = NOTION.prop_text(p, "Meaning_ja")
             py = NOTION.prop_text(p, "Pinyin")
             cat = NOTION.prop_text(p, "Category")
@@ -1511,6 +1511,32 @@ class Handler(BaseHTTPRequestHandler):
         q = parse_qs(urlparse(self.path).query)
         return (q.get("lang") or ["en"])[0]
 
+    def _handle_tts(self):
+        """通し読みの音声（MP3）を作って返す。body: {lines:[...], lang, rate}"""
+        try:
+            body = self._json_body()
+        except Exception as e:
+            return self._fail(f"bad json: {e}", 400)
+        az = make_azure()
+        if not (az and az.configured()):
+            return self._fail("Azure未設定のため音声ファイルを作れません", 400)
+        lines = body.get("lines") or []
+        if len(lines) > 400:
+            lines = lines[:400]
+        data, err = az.synthesize(lines, lang=body.get("lang", "zh"),
+                                  rate=float(body.get("rate", 1.0) or 1.0))
+        if err:
+            return self._fail(err)
+        name = re.sub(r"[^A-Za-z0-9_.-]", "", str(body.get("name") or "read")) or "read"
+        fn = f"{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp3"
+        self.send_response(200)
+        self.send_header("Content-Type", "audio/mpeg")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Content-Disposition", f'attachment; filename="{fn}"')
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(data)
+
     def _handle_assess(self):
         """録音音声（生バイト）＋正解テキストを受けて発音評価を返す。"""
         global AZURE
@@ -1680,6 +1706,8 @@ class Handler(BaseHTTPRequestHandler):
         # ★前方一致にすると /api/assessments/clear まで飲み込むため、パスは完全一致で見る
         if self.path.split("?")[0] == "/api/assess":
             return self._handle_assess()
+        if self.path.split("?")[0] == "/api/tts":
+            return self._handle_tts()
         try:
             body = self._json_body()
         except Exception as e:

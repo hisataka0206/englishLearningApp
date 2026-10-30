@@ -77,6 +77,76 @@ class AzureSpeech:
             return "", str(e)
 
 
+    # ------------------------------------------------------------ 音声合成
+    VOICES = {"zh": "zh-CN-XiaoxiaoNeural", "en": "en-US-JennyNeural",
+              "ja": "ja-JP-NanamiNeural"}
+
+    def synthesize(self, lines, lang="zh", rate=1.0, gap_ms=350, voice=None):
+        """文のリストをつなげた1本のMP3にして返す（通し読みのダウンロード用）。
+
+        1リクエストあたりの上限があるため、文字数でまとめて分割送信し、
+        返ってきたMP3を順につなぐ（MP3はフレーム連結で再生できる）。
+        """
+        if not self.configured():
+            return None, "Azure未設定（config.jsonのazure.keyを確認）"
+        lines = [re.sub(r"[\s/|｜／]+", "", x) for x in (lines or [])]
+        lines = [x for x in lines if x]
+        if not lines:
+            return None, "読み上げる文がありません"
+        name = voice or self.VOICES.get(lang, self.VOICES["zh"])
+        xml_lang = name[:5]
+        pct = int(round((float(rate) - 1.0) * 100))
+        rate_attr = f"{pct:+d}%"
+
+        chunks, cur, n = [], [], 0
+        for s in lines:
+            if cur and n + len(s) > 700:   # 1回あたりの文字数の目安
+                chunks.append(cur)
+                cur, n = [], 0
+            cur.append(s)
+            n += len(s)
+        if cur:
+            chunks.append(cur)
+
+        out = bytearray()
+        for ch in chunks:
+            body = "".join(
+                f"<prosody rate='{rate_attr}'>{self._xml(s)}</prosody>"
+                f"<break time='{int(gap_ms)}ms'/>" for s in ch)
+            ssml = (f"<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' "
+                    f"xml:lang='{xml_lang}'><voice name='{name}'>{body}</voice></speak>")
+            data, err = self._tts(ssml)
+            if err:
+                return None, err
+            out += data
+        return bytes(out), None
+
+    @staticmethod
+    def _xml(s):
+        return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                 .replace('"', "&quot;").replace("'", "&apos;"))
+
+    def _tts(self, ssml):
+        url = f"https://{self.region}.tts.speech.microsoft.com/cognitiveservices/v1"
+        req = urllib.request.Request(url, data=ssml.encode("utf-8"), method="POST")
+        req.add_header("Ocp-Apim-Subscription-Key", self.key)
+        req.add_header("Content-Type", "application/ssml+xml")
+        req.add_header("X-Microsoft-OutputFormat", "audio-24khz-48kbitrate-mono-mp3")
+        req.add_header("User-Agent", "english-learning-app")
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                return r.read(), None
+        except urllib.error.HTTPError as e:
+            body = ""
+            try:
+                body = e.read().decode("utf-8")[:200]
+            except Exception:
+                pass
+            return None, f"Azure TTS HTTP {e.code}: {body}"
+        except Exception as e:
+            return None, f"Azure TTS接続エラー: {e}"
+
+
 TONE_RE = re.compile(r"([a-zü]+)([1-5])", re.I)
 
 # 声調記号つき母音 → 声調番号
@@ -84,6 +154,7 @@ _TONE_MARKS = {
     "1": "āēīōūǖĀĒĪŌŪǕ", "2": "áéíóúǘÁÉÍÓÚǗ",
     "3": "ǎěǐǒǔǚǍĚǏǑǓǙ", "4": "àèìòùǜÀÈÌÒÙǛ",
 }
+
 
 
 def tone_from_pinyin(py):
