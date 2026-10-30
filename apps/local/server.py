@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "1.41.0"  # 機能変更時にここを更新（画面右上に表示される）
+APP_VERSION = "1.42.0"  # 機能変更時にここを更新（画面右上に表示される）
 
 # 記事モードの失敗ラベル（Notion運用ルール準拠）: label, 意味
 ARTICLE_FAIL_LABELS = [
@@ -786,6 +786,76 @@ def glossary_push_start(create_missing=True, limit=0):
 
 def glossary_push_status():
     return dict(GLOSS_PUSH), None
+
+
+# ------------------------------------------------------------ 単語ゲーム
+# 記事・会話の本文から「その語が実際に使われている文」を引くための索引。
+# 穴埋めゲームの例文に使う。記事ファイルが更新されたら作り直す。
+GAME_SENTS = {"key": None, "idx": {}}
+
+
+def _game_sent_index():
+    key = []
+    for name in ("articles_zh.json", "dialogs_zh.json"):
+        p = _file(name)
+        key.append(os.path.getmtime(p) if os.path.exists(p) else 0)
+    key = tuple(key)
+    if GAME_SENTS["key"] == key and GAME_SENTS["idx"]:
+        return GAME_SENTS["idx"]
+
+    sents = []
+    for src_items in (_articles(), _dialogs()):
+        for a in src_items:
+            for s in a.get("sentences") or []:
+                z = (s.get("zh") or "").strip()
+                if 10 <= len(z) <= 40:
+                    sents.append(z)
+    terms = {e["zh"] for e in _gloss() if 2 <= len(e["zh"]) <= 6}
+    idx = {}
+    for z in sents:
+        seen = set()
+        for n in range(2, 7):
+            for k in range(len(z) - n + 1):
+                w = z[k:k + n]
+                if w in terms:
+                    seen.add(w)
+        for w in seen:
+            lst = idx.setdefault(w, [])
+            if len(lst) < 3 and z not in lst:
+                lst.append(z)
+    GAME_SENTS["key"], GAME_SENTS["idx"] = key, idx
+    return idx
+
+
+def game_deck(mode="mean", cat="", general=True, limit=0):
+    """ゲームの出題プールを返す。mode=cloze のときだけ例文をつける。"""
+    items = _gloss()
+    if cat:
+        items = [e for e in items if _gloss_cat(e) == cat]
+    elif not general:
+        items = [e for e in items if _gloss_cat(e) != "一般"]
+    idx = _game_sent_index() if mode == "cloze" else {}
+    out = []
+    for e in items:
+        zh, ja = e["zh"], (e.get("ja") or "").strip()
+        if not ja or not zh:
+            continue
+        if mode in ("build", "cloze") and len(zh) < 2:
+            continue
+        ex = idx.get(zh) or []
+        if mode == "cloze" and not ex:
+            continue
+        out.append({"zh": zh, "py": py_mark(e.get("pinyin") or ""), "ja": ja,
+                    "cat": _gloss_cat(e), "freq": e.get("freq") or 0, "ex": ex[:2]})
+    out.sort(key=lambda x: (-(x["freq"]), x["zh"]))
+    if limit and limit > 0:
+        out = out[:limit]
+    counts = {}
+    for e in _gloss():
+        c = _gloss_cat(e)
+        counts[c] = counts.get(c, 0) + 1
+    return {"mode": mode, "items": out, "total": len(out),
+            "cats": [{"name": c, "n": counts.get(c, 0)} for c in GLOSS_CATS]}, None
 
 
 def glossary_autosync_start():
@@ -1670,6 +1740,14 @@ class Handler(BaseHTTPRequestHandler):
                 data, err = weak_words(lg)
             else:
                 data, err = list_assessments(lg)
+            self._ok(data) if not err else self._fail(err)
+        elif self.path.startswith("/api/game/deck"):
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query)
+            data, err = game_deck(mode=(q.get("mode") or ["mean"])[0],
+                                  cat=(q.get("cat") or [""])[0],
+                                  general=(q.get("general") or ["1"])[0] != "0",
+                                  limit=int((q.get("limit") or ["0"])[0] or 0))
             self._ok(data) if not err else self._fail(err)
         elif self.path.startswith("/api/glossary/push"):
             data, err = glossary_push_status()
